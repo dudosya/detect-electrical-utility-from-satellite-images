@@ -4,6 +4,9 @@ output_imgs/
 # reposcribe
 reposcribe.md
 
+#logs
+utils/logs
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
