@@ -96,16 +96,34 @@ def pad_to_patch_size(img_arr: np.ndarray, patch_size: int)-> np.ndarray:
 
 
 if __name__ == "__main__":
+    import yaml
+    import argparse
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", '-cfg', required=True, help="name of the config yaml file")
+    args = parser.parse_args()
+    CONFIG_PATH = Path.cwd() / args.config
+    
+    # open and load the config dict
+    with open(CONFIG_PATH,'r') as f:
+        cfg_dict = yaml.safe_load(f)
+    
+    # assign the config params to vars
+    PATCH_SIZE = cfg_dict["preprocessing"]["patch_size"]
+    BACKGROUND_FRACTION = cfg_dict["preprocessing"]["background_fraction"]
+    OUTPUT_PATH = Path.cwd() / cfg_dict["paths"]["output_dir"]
+    
+    # empty image arr
     image_arr = np.zeros((1024,1024,3), dtype=np.uint8)
+    
+    # yellow mask arr in the middle
     mask_arr = image_arr.copy()
     mask_arr[400:600,400:600, :] = [255,255,0]
-    PATCH_SIZE = 256
-    OUTPUT_PATH = Path.cwd() / "output_imgs" / "patches"
-    TEMP_OG_NAME = "some-name"
-    BACKGROUND_FRACTION = 0.1 # fraction of empty patches that we are going to save
     
+    # it will be the real filename later on
+    TEMP_OG_NAME = "some-name"
     
     # test the create patches function
-    print(create_patches(image_arr, mask_arr, PATCH_SIZE, OUTPUT_PATH, TEMP_OG_NAME, BACKGROUND_FRACTION))
+    create_patches(image_arr, mask_arr, PATCH_SIZE, OUTPUT_PATH, TEMP_OG_NAME, BACKGROUND_FRACTION)
     
 
