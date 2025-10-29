@@ -3,4 +3,5 @@ preprocessing:
   background_fraction: 0.1 # fraction of background patches to save
 
 paths:
-  output_dir: "output_imgs/patches2"
+  output_dir: "output_imgs/patches3"
+  data_dir: "data"

@@ -4,6 +4,15 @@ import datetime
 
 
 def setup_logger(log_dir: str | Path, logger_lvl: str ,console_handler_lvl: str, file_handler_lvl: str):
+    """sets up the logger
+
+    Args:
+        log_dir (str | Path): absolute path to the log directory. it will get normalized using idempotent Path() constructor
+        logger_lvl (str): logger level
+        console_handler_lvl (str): console handler level
+        file_handler_lvl (str): file handler level
+    """
+    
     #get logger
     logger = logging.getLogger()
     
@@ -26,7 +35,6 @@ def setup_logger(log_dir: str | Path, logger_lvl: str ,console_handler_lvl: str,
     # create the folder
     log_dir.mkdir(parents=True, exist_ok=True)
     
-    # TODO: delegate this to caller
     #define log file path
     LOG_FP = log_dir / f"{filename}.log"
     
