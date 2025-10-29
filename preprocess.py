@@ -5,7 +5,23 @@ from pathlib import Path
 import random
 
 
-def create_patches(image_arr, mask_arr, patch_size, output_path, original_name, background_fraction):
+def create_patches(image_arr: np.ndarray, mask_arr: np.ndarray, patch_size: int, output_path: str | Path, original_name: str, background_fraction: float)->None:
+    """ Generate and save patches from a large image and its corresponding mask
+    
+    This function takes a large image and mask, pads them to be perfectly divisible
+    by the patch size, and then extracts smaller corresponding patches. it filters the patches,
+    keeping all patches that contain labeled objects and a random sampling of patches that are 
+    purely background. The resulting image and mask patches are  saved to separate subdirectories.
+    
+
+    Args:
+        image_arr (np.ndarray): The source image as a NumPy array, expected in (H,W,C) format
+        mask_arr (np.ndarray): The corresponding mask image as a Numpy array, expected with the same height and width as the image_arr
+        patch_size (int): The side length of the square patches to generate ie 256 for 256x256 patches
+        output_path (str | Path): The root directory where "img_patches" and "mask_patches" subfolders will be created and populated
+        original_name (str): A unique identifier for the source image,, used as a prefix for the output patch filenames ie "image_01"
+        background_fraction (float): probablity from 0.0 to 1.0 of keeping a patch if its corresponding mask is empty ie background
+    """
     
     # create the output dirs if it does not exist
     output_path.mkdir(parents=True, exist_ok = True)
@@ -49,11 +65,25 @@ def create_patches(image_arr, mask_arr, patch_size, output_path, original_name, 
                 img_patch_obj.save(img_fp)
                 mask_patch_obj.save(mask_fp)
             # else discard the imgs
-            
-    return "Done"
 
 
-def pad_to_patch_size(img_arr, patch_size):
+def pad_to_patch_size(img_arr: np.ndarray, patch_size: int)-> np.ndarray:
+    """Pad a numpy array to be divisible by a patch size
+    
+    Adds constant padding (zeros) to the bottom and right edges of an array
+    until its height and widths are perfectly divisible by the 
+    given patch size
+
+    Args:
+        img_arr (np.ndarray): The input array to pad, expected to have shape
+            of (H,W,C)
+        patch_size (int): The target patch size. The output array's
+            height and width will be a multiple of this value
+
+    Returns:
+        np.ndarray: A new, padded array. If not padding was needed,
+            a copy of the original array is returned
+    """
     # calculate the needed paddings
     pad_h = (patch_size - img_arr.shape[0] % patch_size) % patch_size
     pad_w = (patch_size - img_arr.shape[1] % patch_size) % patch_size
