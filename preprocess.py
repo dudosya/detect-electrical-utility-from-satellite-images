@@ -4,6 +4,9 @@ from matplotlib import pyplot as plt
 from pathlib import Path
 import random
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 def create_patches(image_arr: np.ndarray, mask_arr: np.ndarray, patch_size: int, output_path: str | Path, original_name: str, background_fraction: float)->None:
     """ Generate and save patches from a large image and its corresponding mask
@@ -30,9 +33,14 @@ def create_patches(image_arr: np.ndarray, mask_arr: np.ndarray, patch_size: int,
     img_dir.mkdir(parents=False, exist_ok = True)
     mask_dir.mkdir(parents=False, exist_ok = True)
     
+    
+    logger.debug(f"img arr shape BEFORE padding: {image_arr.shape}")
+    logger.debug(f"mask arr shape BEFORE padding: {mask_arr.shape}")
     # pad the imgs
     image_arr = pad_to_patch_size(image_arr,patch_size)
     mask_arr = pad_to_patch_size(mask_arr,patch_size)
+    logger.debug(f"img arr shape AFTER padding: {image_arr.shape}")
+    logger.debug(f"mask arr shape AFTER padding: {mask_arr.shape}")
     
     # generate the coordinates to slice
     for y_start in range(0,image_arr.shape[0], patch_size):
@@ -64,7 +72,16 @@ def create_patches(image_arr: np.ndarray, mask_arr: np.ndarray, patch_size: int,
                 # save the images
                 img_patch_obj.save(img_fp)
                 mask_patch_obj.save(mask_fp)
-            # else discard the imgs
+                
+                #logger
+                logger.info(f"Saved {img_fp}")
+                logger.info(f"Saved {mask_fp}")
+                
+                
+            else:
+                # logger
+                logger.debug(f"Discarded {img_fp}")
+                logger.debug(f"Discarded {mask_fp}")
 
 
 def pad_to_patch_size(img_arr: np.ndarray, patch_size: int)-> np.ndarray:

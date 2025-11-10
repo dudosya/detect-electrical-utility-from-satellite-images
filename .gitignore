@@ -9,6 +9,7 @@ reposcribe.md
 
 #logs
 utils/logs
+logs/
 
 
 # Byte-compiled / optimized / DLL files
