@@ -31,7 +31,6 @@ def create_patches(image_arr: np.ndarray, mask_arr: np.ndarray, patch_size: int,
     mask_dir.mkdir(parents=False, exist_ok = True)
     
     # pad the imgs
-    
     image_arr = pad_to_patch_size(image_arr,patch_size)
     mask_arr = pad_to_patch_size(mask_arr,patch_size)
     
@@ -44,11 +43,12 @@ def create_patches(image_arr: np.ndarray, mask_arr: np.ndarray, patch_size: int,
             
             # slice from the original images
             img_patch = image_arr[y_start:y_end, x_start:x_end , :]
-            mask_patch = mask_arr[y_start:y_end,x_start:x_end, :]
+            mask_patch = mask_arr[y_start:y_end,x_start:x_end]
             
             # create Pillow Image objects from np arrays
             img_patch_obj = Image.fromarray(img_patch)
-            mask_patch_obj = Image.fromarray(mask_patch)
+            mask_patch_obj = Image.fromarray(mask_patch,mode='L')
+            
             
             # define names for the objects
             img_name = f"{original_name}_img_{y_start}_{x_start}.png"
@@ -89,7 +89,12 @@ def pad_to_patch_size(img_arr: np.ndarray, patch_size: int)-> np.ndarray:
     pad_w = (patch_size - img_arr.shape[1] % patch_size) % patch_size
     
     # apply the paddings
-    padded_arr = np.pad(img_arr,pad_width=((0,pad_h), (0, pad_w), (0,0)), mode='constant')
+    if img_arr.ndim == 3:
+        padded_arr = np.pad(img_arr,pad_width=((0,pad_h), (0, pad_w), (0,0)), mode='constant')
+    elif img_arr.ndim == 2:
+        padded_arr = np.pad(img_arr,pad_width=((0,pad_h), (0, pad_w)), mode='constant')
+    else:
+        raise ValueError("image arr is expected to have two types of dims: (H,W,C) or (H,W)")
     
     # return the padded arr
     return padded_arr
@@ -102,7 +107,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", '-cfg', required=True, help="name of the config yaml file")
     args = parser.parse_args()
-    CONFIG_PATH = Path.cwd() / args.config
+    CONFIG_PATH = Path.cwd() / f"{args.config}.yaml"
     
     # open and load the config dict
     with open(CONFIG_PATH,'r') as f:
@@ -114,12 +119,13 @@ if __name__ == "__main__":
     OUTPUT_PATH = Path.cwd() / cfg_dict["paths"]["output_dir"]
     
     # empty image arr
-    image_arr = np.zeros((1024,1024,3), dtype=np.uint8)
+    image_arr = np.zeros((4800,3200,3), dtype=np.uint8)
     
-    # yellow mask arr in the middle
-    mask_arr = image_arr.copy()
-    mask_arr[400:600,400:600, :] = [255,255,0]
-    
+    # mask arr in the middle
+    mask_arr = np.zeros((4800,3200), dtype=np.uint8)
+    mask_arr[2000:2800,1200:2000] = 255
+    mask_arr[2200:2600,1400:1800] = 128
+
     # it will be the real filename later on
     TEMP_OG_NAME = "some-name"
     

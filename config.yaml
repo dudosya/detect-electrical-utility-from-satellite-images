@@ -3,5 +3,11 @@ preprocessing:
   background_fraction: 0.1 # fraction of background patches to save
 
 paths:
-  output_dir: "output_imgs/patches3"
+  output_dir: "output_imgs/patches1"
   data_dir: "data"
+
+logging:
+  logging_dir_name: "idk"
+  logger_lvl: "debug"
+  console_handler_lvl: "warning"
+  file_handler_lvl: "debug"
