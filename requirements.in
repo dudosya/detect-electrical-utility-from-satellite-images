@@ -3,3 +3,5 @@ matplotlib
 Pillow
 pyyaml
 pydantic
+# torch
+# torchvision

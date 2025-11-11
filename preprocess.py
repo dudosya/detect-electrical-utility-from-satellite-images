@@ -3,6 +3,7 @@ from PIL import Image
 from matplotlib import pyplot as plt
 from pathlib import Path
 import random
+from utils.file_utils import drop_jpg_paths_with_no_npz_pair
 
 import logging
 logger = logging.getLogger(__name__)
@@ -60,7 +61,7 @@ def create_patches(image_arr: np.ndarray, mask_arr: np.ndarray, patch_size: int,
             
             # define names for the objects
             img_name = f"{original_name}_img_{y_start}_{x_start}.png"
-            mask_name = f"{original_name}_mask_{y_start}_{x_start}.png"
+            mask_name = f"{original_name}_msk_{y_start}_{x_start}.png"
             
             # full path names
             img_fp = img_dir / img_name
@@ -76,7 +77,6 @@ def create_patches(image_arr: np.ndarray, mask_arr: np.ndarray, patch_size: int,
                 #logger
                 logger.info(f"Saved {img_fp}")
                 logger.info(f"Saved {mask_fp}")
-                
                 
             else:
                 # logger
@@ -117,36 +117,104 @@ def pad_to_patch_size(img_arr: np.ndarray, patch_size: int)-> np.ndarray:
     return padded_arr
 
 
-if __name__ == "__main__":
-    import yaml
-    import argparse
+def jpg_paths_to_patches(cfg):
     
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", '-cfg', required=True, help="name of the config yaml file")
-    args = parser.parse_args()
-    CONFIG_PATH = Path.cwd() / f"{args.config}.yaml"
+    # get all the jpg paths
+    jpg_paths = sorted(cfg.paths.data_dir.glob("*/*.jpg"))
     
-    # open and load the config dict
-    with open(CONFIG_PATH,'r') as f:
-        cfg_dict = yaml.safe_load(f)
+    # drop paths that dont have npz pair
+    jpg_paths = drop_jpg_paths_with_no_npz_pair(jpg_paths)
     
-    # assign the config params to vars
-    PATCH_SIZE = cfg_dict["preprocessing"]["patch_size"]
-    BACKGROUND_FRACTION = cfg_dict["preprocessing"]["background_fraction"]
-    OUTPUT_PATH = Path.cwd() / cfg_dict["paths"]["output_dir"]
-    
-    # empty image arr
-    image_arr = np.zeros((4800,3200,3), dtype=np.uint8)
-    
-    # mask arr in the middle
-    mask_arr = np.zeros((4800,3200), dtype=np.uint8)
-    mask_arr[2000:2800,1200:2000] = 255
-    mask_arr[2200:2600,1400:1800] = 128
+    for jpg_path in jpg_paths:
+        # get filename
+        filename = jpg_path.stem
+        
+        # load img arr
+        PIL_obj = Image.open(jpg_path)
+        img_arr = np.array(PIL_obj)
+        
+        # assuming that mask files are all .npz files
+        npz_path = jpg_path.with_suffix(".npz")
+        
+        # load the mask arr
+        npz_obj = np.load(npz_path)
+        mask_arr = npz_obj[npz_obj.files[0]]
+        
+        logger.info(f"{filename} is going to be sliced to patches")
+        
+        # call create_patch func for a single pair
+        create_patches(img_arr,mask_arr,cfg.preprocessing.patch_size,cfg.paths.output_dir,filename,cfg.preprocessing.background_fraction)
 
-    # it will be the real filename later on
-    TEMP_OG_NAME = "some-name"
+
+if __name__ == "__main__":
+    import argparse
+    import yaml
+    from pathlib import Path
+    from utils.logging_config import setup_logger
+    from utils.file_utils import drop_jpg_paths_with_no_npz_pair
+    import logging
+    import numpy as np
+    from PIL import Image
+    from config import AppConfig
+    import pydantic
+    import sys
     
-    # test the create patches function
-    create_patches(image_arr, mask_arr, PATCH_SIZE, OUTPUT_PATH, TEMP_OG_NAME, BACKGROUND_FRACTION)
+    # set up parser
+    parser = argparse.ArgumentParser()
     
+    # add config path arg
+    parser.add_argument("-cfg", "--config", required=True, help="relative path to the config file. no need to write the extension ie .yaml")
+    
+    # parse the args
+    args = parser.parse_args()
+    
+    # get the relative path
+    CFG_PATH = Path.cwd() / f"{args.config}.yaml"
+    
+    #load the config dict
+    with open(CFG_PATH,'r') as f:
+        cfg_dict = yaml.safe_load(f)
+        
+    #get the configs
+    try:
+        cfg = AppConfig(**cfg_dict)
+    except pydantic.ValidationError as e:
+        print(f"FATAL. CONFIG FAILED: {e}")
+        sys.exit(1)
+
+    # logger setup
+    setup_logger(cfg.paths.logging_dir_name, cfg.logging.logger_lvl, cfg.logging.console_handler_lvl, cfg.logging.file_handler_lvl)
+    
+    # get logger
+    logger = logging.getLogger(__name__)
+    
+    # now we can JUST use the logger like this 
+        # logger.debug("lvl 1 whaat")
+        # logger.warning("there is a warning dude")
+    
+    # get all the jpg paths
+    jpg_paths = sorted(cfg.paths.data_dir.glob("*/*.jpg"))
+    
+    # drop paths that dont have npz pair
+    jpg_paths = drop_jpg_paths_with_no_npz_pair(jpg_paths)
+    
+    for jpg_path in jpg_paths:
+        # get filename
+        filename = jpg_path.stem
+        
+        # load img arr
+        PIL_obj = Image.open(jpg_path)
+        img_arr = np.array(PIL_obj)
+        
+        # assuming that mask files are all .npz files
+        npz_path = jpg_path.with_suffix(".npz")
+        
+        # load the mask arr
+        npz_obj = np.load(npz_path)
+        mask_arr = npz_obj[npz_obj.files[0]]
+        
+        logger.info(f"{filename} is going to be sliced to patches")
+        
+        # call create_patch func for a single pair
+        create_patches(img_arr,mask_arr,cfg.preprocessing.patch_size,cfg.paths.output_dir,filename,cfg.preprocessing.background_fraction)
 

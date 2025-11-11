@@ -1,18 +1,19 @@
 import argparse
 import yaml
 from pathlib import Path
-from preprocess import create_patches
 from utils.logging_config import setup_logger
-from utils.file_utils import drop_jpg_paths_with_no_npz_pair
+from preprocess import jpg_paths_to_patches
 import logging
 import numpy as np
 from PIL import Image
 from config import AppConfig
 import pydantic
 import sys
+from dataset import dataset_tester
 
-def main():
-    
+
+
+def get_cfg():
     # set up parser
     parser = argparse.ArgumentParser()
     
@@ -35,6 +36,13 @@ def main():
     except pydantic.ValidationError as e:
         print(f"FATAL. CONFIG FAILED: {e}")
         sys.exit(1)
+        
+    return cfg
+
+def main():
+
+    # get config from CLI and config.yaml
+    cfg = get_cfg()
 
     # logger setup
     setup_logger(cfg.paths.logging_dir_name, cfg.logging.logger_lvl, cfg.logging.console_handler_lvl, cfg.logging.file_handler_lvl)
@@ -42,40 +50,14 @@ def main():
     # get logger
     logger = logging.getLogger(__name__)
     
-    # now we can JUST use the logger like this 
-        # logger.debug("lvl 1 whaat")
-        # logger.warning("there is a warning dude")
+    # jpg_paths_to_patches
+    # it will effectively create patches
+    #jpg_paths_to_patches(cfg)
     
-    # get all the jpg paths
-    jpg_paths = sorted(cfg.paths.data_dir.glob("*/*.jpg"))
-    
-    # drop paths that dont have npz pair
-    jpg_paths = drop_jpg_paths_with_no_npz_pair(jpg_paths)
-    
-    for jpg_path in jpg_paths:
-        # get filename
-        filename = jpg_path.name
-        
-        # load img arr
-        PIL_obj = Image.open(jpg_path)
-        img_arr = np.array(PIL_obj)
-        
-        # assuming that mask files are all .npz files
-        npz_path = jpg_path.with_suffix(".npz")
-        
-        # load the mask arr
-        npz_obj = np.load(npz_path)
-        mask_arr = npz_obj[npz_obj.files[0]]
-        
-        logger.info(f"{filename} is going to be sliced to patches")
-        
-        # call create_patch func for a single pair
-        create_patches(img_arr,mask_arr,cfg.preprocessing.patch_size,cfg.paths.output_dir,filename,cfg.preprocessing.background_fraction)
+    # dataset tester program
+    dataset_tester(cfg)
 
+    logger.info("THE PROGRAM IS DONE RUNNING")
 
 if __name__ == "__main__":
-    
     main()
-    
-
-    

@@ -3,11 +3,11 @@ preprocessing:
   background_fraction: 0.1 # fraction of background patches to save
 
 paths:
-  output_dir: "output_imgs/patches4"
+  output_dir: "output_imgs/patches3"
   data_dir: "data"
   logging_dir_name: "logs/mal2"
 
 logging:
   logger_lvl: "debug"
-  console_handler_lvl: "warning"
+  console_handler_lvl: "info"
   file_handler_lvl: "debug"
