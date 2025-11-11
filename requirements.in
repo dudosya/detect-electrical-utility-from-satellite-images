@@ -2,3 +2,4 @@ numpy
 matplotlib
 Pillow
 pyyaml
+pydantic

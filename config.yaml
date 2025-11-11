@@ -1,13 +1,13 @@
 preprocessing:
-  patch_size: 512
+  patch_size: 1024
   background_fraction: 0.1 # fraction of background patches to save
 
 paths:
-  output_dir: "output_imgs/patches3"
+  output_dir: "output_imgs/patches4"
   data_dir: "data"
+  logging_dir_name: "logs/mal2"
 
 logging:
-  logging_dir_name: "mal"
   logger_lvl: "debug"
   console_handler_lvl: "warning"
   file_handler_lvl: "debug"

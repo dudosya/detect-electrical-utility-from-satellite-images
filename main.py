@@ -7,6 +7,9 @@ from utils.file_utils import drop_jpg_paths_with_no_npz_pair
 import logging
 import numpy as np
 from PIL import Image
+from config import AppConfig
+import pydantic
+import sys
 
 def main():
     
@@ -27,19 +30,14 @@ def main():
         cfg_dict = yaml.safe_load(f)
         
     #get the configs
-    PATCH_SIZE = cfg_dict["preprocessing"]["patch_size"]
-    BACKGROUND_FRACTION = cfg_dict["preprocessing"]["background_fraction"]
-    
-    OUTPUT_DIR = Path.cwd() / cfg_dict["paths"]["output_dir"]
-    DATA_DIR = Path.cwd() / cfg_dict["paths"]["data_dir"]
-    
-    LOG_DIR = Path.cwd() / "logs" / cfg_dict["logging"]["logging_dir_name"]
-    LOGGER_LVL = cfg_dict["logging"]["logger_lvl"]
-    CONSOLE_HANDLER_LVL = cfg_dict["logging"]["console_handler_lvl"]
-    FILE_HANDER_LVL = cfg_dict["logging"]["file_handler_lvl"]
-    
+    try:
+        cfg = AppConfig(**cfg_dict)
+    except pydantic.ValidationError as e:
+        print(f"FATAL. CONFIG FAILED: {e}")
+        sys.exit(1)
+
     # logger setup
-    setup_logger(LOG_DIR, LOGGER_LVL, CONSOLE_HANDLER_LVL, FILE_HANDER_LVL)
+    setup_logger(cfg.paths.logging_dir_name, cfg.logging.logger_lvl, cfg.logging.console_handler_lvl, cfg.logging.file_handler_lvl)
     
     # get logger
     logger = logging.getLogger(__name__)
@@ -49,7 +47,7 @@ def main():
         # logger.warning("there is a warning dude")
     
     # get all the jpg paths
-    jpg_paths = sorted(DATA_DIR.glob("*/*.jpg"))
+    jpg_paths = sorted(cfg.paths.data_dir.glob("*/*.jpg"))
     
     # drop paths that dont have npz pair
     jpg_paths = drop_jpg_paths_with_no_npz_pair(jpg_paths)
@@ -72,7 +70,7 @@ def main():
         logger.info(f"{filename} is going to be sliced to patches")
         
         # call create_patch func for a single pair
-        create_patches(img_arr,mask_arr,PATCH_SIZE,OUTPUT_DIR,filename,BACKGROUND_FRACTION)
+        create_patches(img_arr,mask_arr,cfg.preprocessing.patch_size,cfg.paths.output_dir,filename,cfg.preprocessing.background_fraction)
 
 
 if __name__ == "__main__":
