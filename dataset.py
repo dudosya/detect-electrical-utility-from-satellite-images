@@ -1,17 +1,40 @@
-# import torch
-# import torchvision
+import torch
+import torchvision
 from pathlib import Path
+from PIL import Image
 
 import logging
 logger = logging.getLogger(__name__)
 
-# class SatteliteImgsDataset(torch.utils.data.Dataset):
-#     def __init__(self, img_paths, mask_paths):
-#         super().__init__()
-#         self.img_paths = img_paths
-#         self.mask_paths = mask_paths
-
-
+class SatteliteImgsDataset(torch.utils.data.Dataset):
+    def __init__(self, img_paths, mask_paths, transforms):
+        super().__init__()
+        
+        # validate the input
+        check_img_mask_paths(img_paths,mask_paths)
+        assert isinstance(transforms,torchvision.transforms.transforms.Compose), "The transform is not a subclass of torchvision.transforms.transforms.Compose"
+        
+        # put the stuff here
+        self.img_paths = img_paths
+        self.mask_paths = mask_paths
+        self.transforms = transforms
+        
+    def __len__(self):
+        return len(self.img_paths)
+    
+    
+    def __getitem__(self, index):
+        # validate arg
+        assert isinstance(index,int) and (0 <= index < len(self.img_paths)), "The index is not an integer"
+        assert (0 <= index < len(self.img_paths)), "The index is out of bounds"
+        
+        # get the imgs
+        img_patch = Image.open(self.img_paths[index])
+        mask_patch = Image.open(self.mask_paths[index])
+        
+        # apply the transforms to the IMGS, but should i apply the SAME transforms to the MASKS??? idk
+        # we gotta investigate this thing
+        return (self.transforms(img_patch), self.transforms(mask_patch))
 
 
 
@@ -51,7 +74,41 @@ def dataset_tester(cfg):
     img_patch_paths = list(sorted((cfg.paths.output_dir / "img_patches").glob("*.png")))
     mask_patch_paths = list(sorted((cfg.paths.output_dir / "mask_patches").glob("*.png")))
     
-    # maybe a check is needed here so that the patch names are identical except for img -> mask thing
-    check_img_mask_paths(img_patch_paths,mask_patch_paths)
+    # define transforms
+    transforms = torchvision.transforms.Compose([
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.RandomAdjustSharpness(0.5)
+        ])
+    
+    # init the dataset
+    myDataset = SatteliteImgsDataset(img_paths=img_patch_paths,mask_paths=mask_patch_paths,transforms=transforms)
+    
+    # test the dataset len
+    print(len(myDataset))
+    
+    # test the getitem thing
+    print(myDataset[0])
+    
+    # plot the getitem thing
+    import numpy as np
+    import matplotlib.pyplot as plt
+    
+    
+    img_arr = np.array(myDataset[0][0])
+    mask_arr = np.array(myDataset[0][1])
+    print(mask_arr.shape)
+    
+    # before plotting i gotta do this
+    # C H W -> H W C
+    new_img_arr = np.transpose(img_arr,axes=(1,2,0))
+    new_mask_arr = np.transpose(mask_arr,axes=(1,2,0))
+    # the img stays the same i guess???
+    plt.imshow(new_img_arr)
+    plt.imshow(new_mask_arr, alpha=0.6)
+    plt.show()
+    
+    
+    
+    
 
         

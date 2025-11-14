@@ -1,3 +1,8 @@
+import time
+# this is here to see how much time it takes for things to run
+start_import = time.perf_counter()
+
+
 import argparse
 import yaml
 from pathlib import Path
@@ -11,6 +16,8 @@ import pydantic
 import sys
 from dataset import dataset_tester
 
+
+end_import = time.perf_counter()
 
 
 def get_cfg():
@@ -40,6 +47,9 @@ def get_cfg():
     return cfg
 
 def main():
+    
+    # timer setup
+    start_time = time.perf_counter()
 
     # get config from CLI and config.yaml
     cfg = get_cfg()
@@ -56,8 +66,14 @@ def main():
     
     # dataset tester program
     dataset_tester(cfg)
-
-    logger.info("THE PROGRAM IS DONE RUNNING")
+    
+    # end timer
+    end_time = time.perf_counter()
+    
+    # final log
+    logger.info(f"DONE.")
+    logger.info(f"Import Time: {end_import-start_import} sec")
+    logger.info(f"Running Time: {end_time-start_time} sec")
 
 if __name__ == "__main__":
     main()
