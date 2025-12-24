@@ -1,38 +1,61 @@
+from __future__ import annotations
 import time
-# this is here to see how much time it takes for things to run
+
 start_import = time.perf_counter()
 
+import typer
+from typing import Annotated, TYPE_CHECKING
+from dataclasses import dataclass
 
-import argparse
-import yaml
-from pathlib import Path
-from detect_electrical_utility_from_satellite_images.utils.logging_config import setup_logger
-from detect_electrical_utility_from_satellite_images.preprocess import jpg_paths_to_patches
-import logging
-import numpy as np
-from PIL import Image
-from detect_electrical_utility_from_satellite_images.config import AppConfig
-import pydantic
-import sys
-from detect_electrical_utility_from_satellite_images.dataset import dataset_tester
-import re
+
 
 
 end_import = time.perf_counter()
 
+# init typer app
+app = typer.Typer()
 
-def get_cfg():
-    # set up parser
-    parser = argparse.ArgumentParser()
+if TYPE_CHECKING:
+    from detect_electrical_utility_from_satellite_images.config import AppConfig
+    from detect_electrical_utility_from_satellite_images.utils.logging_config import setup_logger
+    import logging
+
+@dataclass
+class State:
+    app_config: AppConfig
+    start_time: float
     
-    # add config path arg
-    parser.add_argument("-cfg", "--config", required=True, help="relative path to the config file. no need to write the extension ie .yaml")
     
-    # parse the args
-    args = parser.parse_args()
+
+@app.callback()
+def manage_internal_state(
+    ctx: typer.Context,
+    config: Annotated[
+        str,
+        typer.Option(help="relative path to the config file. no need to write the extension ie .yaml")] = "config"
+):
+    from detect_electrical_utility_from_satellite_images.utils.logging_config import setup_logger
+
+    # start timer
+    start_time = time.perf_counter()
+    cfg = get_cfg(config)
     
-    # get the relative path
-    CFG_PATH = Path.cwd() / "src" / re.sub(r"-","_",Path.cwd().name) / f"{args.config}.yaml"
+    # logger setup
+    setup_logger(cfg.paths.logging_dir_name, cfg.logging.logger_lvl, cfg.logging.console_handler_lvl, cfg.logging.file_handler_lvl)
+    
+    state_instance = State(app_config=cfg, start_time=start_time)
+    
+    ctx.obj = state_instance
+
+
+def get_cfg(config: str):
+    import yaml
+    from pathlib import Path
+    from detect_electrical_utility_from_satellite_images.config import AppConfig
+    import pydantic
+    import sys
+    
+    CFG_PATH = Path(config).with_suffix(".yaml")
     
     #load the config dict
     with open(CFG_PATH,'r') as f:
@@ -47,34 +70,56 @@ def get_cfg():
         
     return cfg
 
-def main():
+@app.command()
+def preprocess(
+    ctx: typer.Context
+):
+    from detect_electrical_utility_from_satellite_images.preprocess import jpg_paths_to_patches
+    import logging
     
-    # timer setup
-    start_time = time.perf_counter()
-
-    # get config from CLI and config.yaml
-    cfg = get_cfg()
-
-    # logger setup
-    setup_logger(cfg.paths.logging_dir_name, cfg.logging.logger_lvl, cfg.logging.console_handler_lvl, cfg.logging.file_handler_lvl)
+    state: State = ctx.obj
+    cfg = state.app_config
+    start_time = state.start_time
+    
+    # the bulk of the logic goes on here
+    jpg_paths_to_patches(cfg)
+    
+    # end timer
+    end_time = time.perf_counter()
     
     # get logger
     logger = logging.getLogger(__name__)
     
-    # jpg_paths_to_patches
-    # it will effectively create patches
-    #jpg_paths_to_patches(cfg)
+    # final log
+    logger.info(f"Done")
+    logger.info(f"Import Time: {end_import-start_import} sec")
+    logger.info(f"Running Time: {end_time-start_time} sec")
+
     
+@app.command()
+def test_dataset(
+    ctx: typer.Context,
+):
+    from detect_electrical_utility_from_satellite_images.dataset import dataset_tester
+    import logging
+    
+    state: State = ctx.obj
+    cfg = state.app_config
+    start_time = state.start_time
     # dataset tester program
     dataset_tester(cfg)
+    
+    # get logger
+    logger = logging.getLogger(__name__)
     
     # end timer
     end_time = time.perf_counter()
     
     # final log
-    logger.info(f"DONE.")
+    logger.info(f"Done")
     logger.info(f"Import Time: {end_import-start_import} sec")
     logger.info(f"Running Time: {end_time-start_time} sec")
 
+
 if __name__ == "__main__":
-    main()
+    app()

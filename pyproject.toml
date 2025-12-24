@@ -13,10 +13,11 @@ dependencies = [
     "pyyaml>=6.0.3",
     "torch",
     "torchvision",
+    "typer>=0.20.1",
 ]
 
 [project.scripts]
-main = "detect_electrical_utility_from_satellite_images.main:main"
+main = "detect_electrical_utility_from_satellite_images.main:app"
 
 [build-system]
 requires = ["uv_build>=0.9.18,<0.10.0"]
