@@ -1,34 +1,40 @@
 # detect-electrical-utility-from-satellite-images
 
-## Installation Guide
+RA project to detect electrical utility from satellite imagery.
 
-### Prerequisites
+## Prerequisites
 
-1.  Python 3.13 (or compatible version).
-2.  NVIDIA Drivers supporting CUDA 12.6 or newer.
+- [uv](https://docs.astral.sh/uv/) installed.
+- NVIDIA Drivers supporting **CUDA 12.6**.
 
-### 1. Install Standard Dependencies
-
-First, install all base libraries (e.g., NumPy, Matplotlib) from the locked `requirements.txt`:
+## Setup
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
-### 2. Install PyTorch and Torchvision (CUDA 12.6)
+_This installs Python 3.13, CUDA-enabled PyTorch, and all dependencies into a local `.venv`._
 
-Since PyTorch and Torchvision require a specific CUDA build, install them separately using the custom index:
+## Usage
+
+**Run the main application:**
 
 ```bash
-pip install torch torchvision --extra-index-url https://download.pytorch.org/whl/cu126
+uv run main
 ```
+
+**Verify GPU acceleration:**
+
+```bash
+uv run python -c "import torch; print(f'CUDA: {torch.cuda.is_available()} ({torch.cuda.get_device_name(0)})')"
+```
+
+## Development
+
+- **Source Code**: All code is in `src/detect_electrical_utility_from_satellite_images/`
+- **Add Dependencies**: `uv add <package_name>` (e.g., `uv add pandas`)
+- **Sync Changes**: `uv sync` updates the lockfile and environment.
 
 ---
 
-### For Developers: Updating Standard Dependencies
-
-If you change dependencies in `requirements.in` (excluding `torch` and `torchvision`), regenerate the lock file:
-
-```bash
-pip-compile requirements.in
-```
+**Author:** dudosya ([kenaykay@gmail.com](mailto:kenaykay@gmail.com))
