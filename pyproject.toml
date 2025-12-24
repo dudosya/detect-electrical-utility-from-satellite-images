@@ -1,0 +1,32 @@
+[project]
+name = "detect-electrical-utility-from-satellite-images"
+version = "0.1.0"
+description = "ra project to detect electrical utility"
+readme = "README.md"
+authors = [{ name = "dudosya", email = "kenaykay@gmail.com" }]
+requires-python = ">=3.13"
+dependencies = [
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.0",
+    "pillow>=12.0.0",
+    "pydantic>=2.12.5",
+    "pyyaml>=6.0.3",
+    "torch",
+    "torchvision",
+]
+
+[project.scripts]
+main = "detect_electrical_utility_from_satellite_images.main:main"
+
+[build-system]
+requires = ["uv_build>=0.9.18,<0.10.0"]
+build-backend = "uv_build"
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
+torchvision = { index = "pytorch-cu126" }

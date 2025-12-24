@@ -3,7 +3,7 @@ from PIL import Image
 from matplotlib import pyplot as plt
 from pathlib import Path
 import random
-from utils.file_utils import drop_jpg_paths_with_no_npz_pair
+from detect_electrical_utility_from_satellite_images.utils.file_utils import drop_jpg_paths_with_no_npz_pair
 
 import logging
 logger = logging.getLogger(__name__)
@@ -27,9 +27,9 @@ def create_patches(image_arr: np.ndarray, mask_arr: np.ndarray, patch_size: int,
         background_fraction (float): probablity from 0.0 to 1.0 of keeping a patch if its corresponding mask is empty ie background
     """
     
-    # create the output dirs if it does not exist
+    output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok = True)
-    img_dir = output_path / "img_patches" 
+    img_dir = output_path / "img_patches"  
     mask_dir = output_path / "mask_patches"
     img_dir.mkdir(parents=False, exist_ok = True)
     mask_dir.mkdir(parents=False, exist_ok = True)
@@ -150,14 +150,15 @@ if __name__ == "__main__":
     import argparse
     import yaml
     from pathlib import Path
-    from utils.logging_config import setup_logger
-    from utils.file_utils import drop_jpg_paths_with_no_npz_pair
+    from detect_electrical_utility_from_satellite_images.utils.logging_config import setup_logger
+    from detect_electrical_utility_from_satellite_images.utils.file_utils import drop_jpg_paths_with_no_npz_pair
     import logging
     import numpy as np
     from PIL import Image
-    from config import AppConfig
+    from detect_electrical_utility_from_satellite_images.config import AppConfig
     import pydantic
     import sys
+    
     
     # set up parser
     parser = argparse.ArgumentParser()

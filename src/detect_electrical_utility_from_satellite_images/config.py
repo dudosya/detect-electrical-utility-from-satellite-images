@@ -12,8 +12,6 @@ class PathsConfig(pydantic.BaseModel):
     data_dir: Path
     logging_dir_name: Path
     
-    # i dont really understand this part. 
-    # look into it later maybe
     @pydantic.field_validator('*',mode='before')
     @classmethod
     def convert_to_absolute_path(cls, v: typing.Any) -> Path:

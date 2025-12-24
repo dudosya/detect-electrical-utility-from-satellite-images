@@ -6,15 +6,16 @@ start_import = time.perf_counter()
 import argparse
 import yaml
 from pathlib import Path
-from utils.logging_config import setup_logger
-from preprocess import jpg_paths_to_patches
+from detect_electrical_utility_from_satellite_images.utils.logging_config import setup_logger
+from detect_electrical_utility_from_satellite_images.preprocess import jpg_paths_to_patches
 import logging
 import numpy as np
 from PIL import Image
-from config import AppConfig
+from detect_electrical_utility_from_satellite_images.config import AppConfig
 import pydantic
 import sys
-from dataset import dataset_tester
+from detect_electrical_utility_from_satellite_images.dataset import dataset_tester
+import re
 
 
 end_import = time.perf_counter()
@@ -31,7 +32,7 @@ def get_cfg():
     args = parser.parse_args()
     
     # get the relative path
-    CFG_PATH = Path.cwd() / f"{args.config}.yaml"
+    CFG_PATH = Path.cwd() / "src" / re.sub(r"-","_",Path.cwd().name) / f"{args.config}.yaml"
     
     #load the config dict
     with open(CFG_PATH,'r') as f:

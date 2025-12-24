@@ -84,10 +84,17 @@ def dataset_tester(cfg):
     
     # define transforms
     transforms = v2.Compose([
-        v2.ToDtype(dtype=torch.float32,scale=True),
-        v2.RandomAdjustSharpness(0.5),
+        # Geometric: applied to BOTH
         v2.RandomHorizontalFlip(),
+        v2.RandomVerticalFlip(),
         
+        # Photometric: applied ONLY to imgs
+        # TODO: experiment with this later to make sure we are not hurting the performance
+        v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2) ,
+        v2.GaussianBlur(kernel_size=3),
+        
+        #Type conversions
+        v2.ToDtype(dtype=torch.float32,scale=True),
         # the loss fn in torch work with torch.long dtype
         # we gotta convert the msk from uint8 to long
         # we want to put it to the very last step in transforms
