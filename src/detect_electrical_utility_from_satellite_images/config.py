@@ -1,6 +1,21 @@
 import pydantic
 import typing
 from pathlib import Path
+import pydantic_settings
+
+def find_project_root():
+    root_dir = Path(__file__).resolve()
+    
+    while not (root_dir / "pyproject.toml").exists():
+        if root_dir != root_dir.parent:
+            root_dir = root_dir.parent
+        else:
+            raise ValueError("Folder containing pyproject.toml is not found")
+    # should i put logging here?
+    # like logging.debug: we found the root dir. here it is type thing?
+    return root_dir
+
+PROJECT_ROOT = find_project_root()
     
 class PreprocessConfig(pydantic.BaseModel):
     patch_size: typing.Annotated[int, pydantic.Field(ge=128)]
@@ -12,12 +27,15 @@ class PathsConfig(pydantic.BaseModel):
     data_dir: Path
     logging_dir_name: Path
     
-    @pydantic.field_validator('*',mode='before')
+    @pydantic.field_validator('*',mode='after')
     @classmethod
-    def convert_to_absolute_path(cls, v: typing.Any) -> Path:
-        if isinstance(v,str):
-            return (Path.cwd() / v).resolve()
-        return v
+    def convert_to_absolute_path(cls, v: typing.Any | Path) -> Path:
+        if Path(v).is_absolute():
+            return v
+        else:
+            # these are meant to be at the project root level right?
+            # not in the src/project_name/v or something?
+            return (PROJECT_ROOT / v).resolve()
     
     
     
@@ -26,7 +44,12 @@ class LoggingConfig(pydantic.BaseModel):
     console_handler_lvl: typing.Literal['debug','info','warning','error','critical']
     file_handler_lvl: typing.Literal['debug','info','warning','error','critical']
 
-class AppConfig(pydantic.BaseModel):
+class AppConfig(pydantic_settings.BaseSettings):
+    model_config = pydantic_settings.SettingsConfigDict(
+        env_prefix="APP_",
+        env_nested_delimiter="__",
+        frozen=True # we dont want config changes during runtime
+    )
     preprocessing: PreprocessConfig
     paths: PathsConfig
     logging: LoggingConfig
