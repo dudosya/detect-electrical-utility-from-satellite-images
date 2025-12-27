@@ -39,6 +39,17 @@ class PathsConfig(pydantic.BaseModel):
     
     
     
+class ModelConfig(pydantic.BaseModel):
+    architecture: typing.Literal['unet', 'deeplabv3', 'fpn']
+    encoder_name: typing.Literal['resnet18', 'resnet34', 'resnet50', 'efficientnet-b0', 'mobilenet_v2']
+    encoder_weights: typing.Literal['imagenet', None]
+    in_channels: typing.Annotated[int, pydantic.Field(ge=3, le=4)]
+    classes: typing.Annotated[int, pydantic.Field(ge=2)]
+    learning_rate: typing.Annotated[float, pydantic.Field(gt=0.0)]
+    batch_size: typing.Annotated[int, pydantic.Field(ge=1)]
+    epochs: typing.Annotated[int, pydantic.Field(ge=1)]
+    device: typing.Literal['cpu', 'cuda']
+
 class LoggingConfig(pydantic.BaseModel):
     logger_lvl: typing.Literal['debug','info','warning','error','critical']
     console_handler_lvl: typing.Literal['debug','info','warning','error','critical']
@@ -53,3 +64,4 @@ class AppConfig(pydantic_settings.BaseSettings):
     preprocessing: PreprocessConfig
     paths: PathsConfig
     logging: LoggingConfig
+    model: ModelConfig

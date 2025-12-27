@@ -1,0 +1,24 @@
+preprocessing:
+  patch_size: 1024
+  background_fraction: 0.1 # fraction of background patches to save
+
+paths:
+  output_dir: "output_imgs/patches4"
+  data_dir: "data"
+  logging_dir_name: "logs/train1"
+
+logging:
+  logger_lvl: "debug"
+  console_handler_lvl: "info"
+  file_handler_lvl: "debug"
+
+model:
+  architecture: "unet"
+  encoder_name: "resnet18"
+  encoder_weights: "imagenet"
+  in_channels: 3
+  classes: 5
+  learning_rate: 0.001
+  batch_size: 4
+  epochs: 1
+  device: "cpu"

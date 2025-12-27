@@ -120,6 +120,34 @@ def test_dataset(
     logger.info(f"Import Time: {end_import-start_import} sec")
     logger.info(f"Running Time: {end_time-start_time} sec")
 
+@app.command()
+def train(
+    ctx: typer.Context,
+    use_real_data: Annotated[
+        bool,
+        typer.Option("--real-data", help="Use real data instead of mock data")
+    ] = False
+):
+    from detect_electrical_utility_from_satellite_images.train import train_model
+    import logging
+    
+    state: State = ctx.obj
+    cfg = state.app_config
+    start_time = state.start_time
+    
+    # training program
+    train_model(cfg, use_mock_data=not use_real_data)
+    
+    # get logger
+    logger = logging.getLogger(__name__)
+    
+    # end timer
+    end_time = time.perf_counter()
+    
+    # final log
+    logger.info(f"Done")
+    logger.info(f"Import Time: {end_import-start_import} sec")
+    logger.info(f"Running Time: {end_time-start_time} sec")
 
 if __name__ == "__main__":
     app()
