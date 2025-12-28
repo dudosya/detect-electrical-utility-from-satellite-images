@@ -1,1 +1,0 @@
-the general idea of the project is to detect electrical utility from sattelite images using machine learning/computer vision methods.

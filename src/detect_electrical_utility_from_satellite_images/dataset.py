@@ -36,7 +36,10 @@ class SatteliteImgsDataset(torch.utils.data.Dataset):
         
         # explicitly state what they are ie img or msk
         img = torchvision.tv_tensors.Image(img_pil_obj)
-        msk = torchvision.tv_tensors.Mask(msk_pil_obj)
+        # Convert mask to 2D long tensor to avoid channel dimension issues
+        msk_array = np.array(msk_pil_obj)
+        msk_tensor = torch.from_numpy(msk_array).long()
+        msk = torchvision.tv_tensors.Mask(msk_tensor)
     
         
         # (img,msk) -> transforms

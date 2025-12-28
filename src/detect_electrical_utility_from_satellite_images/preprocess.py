@@ -34,6 +34,10 @@ def create_patches(image_arr: np.ndarray, mask_arr: np.ndarray, patch_size: int,
     img_dir.mkdir(parents=False, exist_ok = True)
     mask_dir.mkdir(parents=False, exist_ok = True)
     
+    logger.info(f"Creating patches in directory: {output_path}")
+    logger.info(f"Image shape: {image_arr.shape}, Mask shape: {mask_arr.shape}")
+    logger.info(f"Patch size: {patch_size}, Background fraction: {background_fraction}")
+    
     
     logger.debug(f"img arr shape BEFORE padding: {image_arr.shape}")
     logger.debug(f"mask arr shape BEFORE padding: {mask_arr.shape}")
@@ -218,4 +222,3 @@ if __name__ == "__main__":
         
         # call create_patch func for a single pair
         create_patches(img_arr,mask_arr,cfg.preprocessing.patch_size,cfg.paths.output_dir,filename,cfg.preprocessing.background_fraction)
-

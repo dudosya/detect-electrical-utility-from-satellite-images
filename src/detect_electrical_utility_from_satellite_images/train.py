@@ -4,14 +4,19 @@ import torch.optim as optim
 import torchvision
 from torch.utils.data import DataLoader, random_split
 import typing
+from typing import Tuple, Dict
 import logging
 import time
 from pathlib import Path
 import numpy as np
+import random
+import wandb
+from datetime import datetime
 
 from .model import create_model, save_checkpoint, count_parameters
 from .dataset import SatteliteImgsDataset
 from .config import AppConfig
+from .metrics import calculate_all_metrics, visualize_predictions
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +65,11 @@ def train_epoch(
     optimizer: optim.Optimizer,
     criterion: nn.Module,
     device: str,
-    epoch: int
-) -> float:
-    """Train for one epoch.
+    epoch: int,
+    cfg,
+    gradient_accumulation_steps: int = 1
+) -> Tuple[float, Dict[str, float]]:
+    """Train for one epoch with metrics tracking.
     
     Args:
         model: Model to train
@@ -71,13 +78,21 @@ def train_epoch(
         criterion: Loss function
         device: Device to train on
         epoch: Current epoch number
+        cfg: Configuration object
+        gradient_accumulation_steps: Steps for gradient accumulation
         
     Returns:
-        Average loss for the epoch
+        Tuple of (average loss, metrics dictionary)
     """
     model.train()
     total_loss = 0.0
     num_batches = 0
+    
+    # Initialize metrics accumulators
+    all_predictions = []
+    all_targets = []
+    
+    optimizer.zero_grad()
     
     for batch_idx, (images, masks) in enumerate(dataloader):
         images = images.to(device)
@@ -87,21 +102,60 @@ def train_epoch(
         if masks.ndim == 4:  # If masks have channel dimension
             masks = masks.squeeze(1)  # Remove channel dimension
         
-        optimizer.zero_grad()
         outputs = model(images)
         loss = criterion(outputs, masks)
-        loss.backward()
-        optimizer.step()
         
-        total_loss += loss.item()
+        # Scale loss for gradient accumulation
+        loss = loss / gradient_accumulation_steps
+        loss.backward()
+        
+        # Store predictions and targets for metrics
+        with torch.no_grad():
+            predictions = torch.argmax(outputs, dim=1)
+            all_predictions.append(predictions.cpu())
+            all_targets.append(masks.cpu())
+        
+        # Update weights only after accumulation steps
+        if (batch_idx + 1) % gradient_accumulation_steps == 0:
+            optimizer.step()
+            optimizer.zero_grad()
+        
+        total_loss += loss.item() * gradient_accumulation_steps
         num_batches += 1
         
         if batch_idx % 10 == 0:
-            logger.debug(f"Epoch {epoch}, Batch {batch_idx}: loss = {loss.item():.4f}")
+            logger.debug(f"Epoch {epoch}, Batch {batch_idx}: loss = {loss.item() * gradient_accumulation_steps:.4f}")
+    
+    # Handle remaining gradients if any
+    if len(dataloader) % gradient_accumulation_steps != 0:
+        optimizer.step()
+        optimizer.zero_grad()
+    
+    # Calculate metrics
+    if len(all_predictions) > 0:
+        all_predictions = torch.cat(all_predictions)
+        all_targets = torch.cat(all_targets)
+        metrics = calculate_all_metrics(
+            all_predictions, all_targets, cfg.model.classes, cfg.metrics.dict()
+        )
+    else:
+        metrics = {}
     
     avg_loss = total_loss / max(num_batches, 1)
     logger.info(f"Epoch {epoch} training complete: avg loss = {avg_loss:.4f}")
-    return avg_loss
+    
+    # Log to W&B
+    log_data = {"train/loss": avg_loss}
+    for metric_name, metric_value in metrics.items():
+        if isinstance(metric_value, dict):
+            for class_idx, class_value in metric_value.items():
+                log_data[f"train/{metric_name}_class_{class_idx}"] = class_value
+        else:
+            log_data[f"train/{metric_name}"] = metric_value
+    
+    wandb.log(log_data, step=epoch)
+    
+    return avg_loss, metrics
 
 def validate(
     model: nn.Module,
@@ -139,8 +193,17 @@ def validate(
     logger.info(f"Validation complete: avg loss = {avg_loss:.4f}")
     return avg_loss
 
+def set_seed(seed: int) -> None:
+    """Set random seeds for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
 def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
-    """Main training function.
+    """Main training function with W&B integration and mixed precision support.
     
     Args:
         cfg: Application configuration
@@ -148,11 +211,43 @@ def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
     """
     start_time = time.perf_counter()
     
+    # Set random seed for reproducibility
+    set_seed(cfg.training.seed)
+    
     # Setup device
     device = cfg.model.device
     if device == "cuda" and not torch.cuda.is_available():
         logger.warning("CUDA requested but not available. Falling back to CPU.")
         device = "cpu"
+    
+    # Initialize mixed precision if enabled and device is CUDA
+    scaler = None
+    if cfg.training.mixed_precision and device == "cuda":
+        try:
+            scaler = torch.cuda.amp.GradScaler()
+            logger.info("Mixed precision (AMP) enabled")
+        except Exception as e:
+            logger.warning(f"Failed to enable mixed precision: {e}")
+            scaler = None
+    
+    # Initialize Weights & Biases
+    wandb_config = cfg.wandb.dict()
+    wandb_config["run_name"] = wandb_config["run_name"].replace(
+        "{timestamp}", datetime.now().strftime("%Y%m%d_%H%M%S")
+    )
+    
+    run = wandb.init(
+        project=wandb_config["project"],
+        entity=wandb_config["entity"],
+        name=wandb_config["run_name"],
+        tags=wandb_config["tags"],
+        notes=wandb_config["notes"],
+        group=wandb_config["group"],
+        config=cfg.dict(),
+        save_code=wandb_config["save_code"],
+    )
+    
+    logger.info(f"W&B run initialized: {run.name}")
     
     # Create model
     model = create_model(
@@ -168,7 +263,54 @@ def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
     
     # Setup loss and optimizer
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=cfg.model.learning_rate)
+    if cfg.training.class_weights is not None:
+        class_weights = torch.tensor(cfg.training.class_weights, device=device)
+        criterion = nn.CrossEntropyLoss(weight=class_weights)
+    
+    # Setup optimizer
+    if cfg.training.optimizer == "adam":
+        optimizer = optim.Adam(
+            model.parameters(),
+            lr=cfg.model.learning_rate,
+            **{k: v for k, v in cfg.training.optimizer_params.items() if k in ["betas", "weight_decay"]}
+        )
+    elif cfg.training.optimizer == "sgd":
+        optimizer = optim.SGD(
+            model.parameters(),
+            lr=cfg.model.learning_rate,
+            **{k: v for k, v in cfg.training.optimizer_params.items() if k in ["momentum", "nesterov", "weight_decay"]}
+        )
+    elif cfg.training.optimizer == "adamw":
+        optimizer = optim.AdamW(
+            model.parameters(),
+            lr=cfg.model.learning_rate,
+            **{k: v for k, v in cfg.training.optimizer_params.items() if k in ["betas", "weight_decay"]}
+        )
+    else:
+        raise ValueError(f"Unknown optimizer: {cfg.training.optimizer}")
+    
+    # Setup learning rate scheduler
+    scheduler = None
+    if cfg.training.lr_scheduler == "cosine":
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=cfg.training.lr_scheduler_params.get("T_max", cfg.model.epochs),
+            eta_min=cfg.training.lr_scheduler_params.get("eta_min", 1e-6)
+        )
+    elif cfg.training.lr_scheduler == "reduce_on_plateau":
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode="min",
+            factor=cfg.training.lr_scheduler_params.get("factor", 0.5),
+            patience=cfg.training.lr_scheduler_params.get("patience", 5),
+            min_lr=cfg.training.lr_scheduler_params.get("min_lr", 1e-6)
+        )
+    elif cfg.training.lr_scheduler == "step":
+        scheduler = optim.lr_scheduler.StepLR(
+            optimizer,
+            step_size=cfg.training.lr_scheduler_params.get("step_size", 10),
+            gamma=cfg.training.lr_scheduler_params.get("gamma", 0.1)
+        )
     
     # Create dataloaders
     if use_mock_data:
@@ -242,32 +384,51 @@ def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
     
     # Training loop
     best_loss = float('inf')
-    checkpoint_dir = cfg.paths.output_dir / "checkpoints"
+    
+    # Create checkpoint directory in W&B run folder
+    checkpoint_dir = Path(run.dir) / "checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Checkpoints will be saved to: {checkpoint_dir}")
     
     for epoch in range(1, cfg.model.epochs + 1):
         logger.info(f"Starting epoch {epoch}/{cfg.model.epochs}")
         
         # Train
-        train_loss = train_epoch(model, train_loader, optimizer, criterion, device, epoch)
+        train_loss, train_metrics = train_epoch(
+            model, train_loader, optimizer, criterion, device, epoch, cfg, cfg.training.gradient_accumulation_steps
+        )
         
         # Validate
         val_loss = validate(model, val_loader, criterion, device)
         
-        # Save checkpoint if best
-        if val_loss < best_loss:
-            best_loss = val_loss
-            checkpoint_path = checkpoint_dir / f"best_model_epoch_{epoch}.pt"
-            save_checkpoint(model, optimizer, epoch, val_loss, checkpoint_path)
+        # Update learning rate scheduler
+        if scheduler is not None:
+            if cfg.training.lr_scheduler == "reduce_on_plateau":
+                scheduler.step(val_loss)
+            else:
+                scheduler.step(epoch)
         
-        # Save periodic checkpoint
-        if epoch % 5 == 0:
-            checkpoint_path = checkpoint_dir / f"checkpoint_epoch_{epoch}.pt"
+        # Log validation metrics
+        wandb.log({
+            "val/loss": val_loss,
+            "lr": optimizer.param_groups[0]['lr']
+        }, step=epoch)
+        
+        # Save best model if validation loss improves
+        if cfg.checkpoints.save_best and val_loss < best_loss:
+            best_loss = val_loss
+            checkpoint_path = checkpoint_dir / "best_model.pt"
             save_checkpoint(model, optimizer, epoch, val_loss, checkpoint_path)
+            logger.info(f"Best model saved to: {checkpoint_path} (loss: {val_loss:.4f})")
     
-    # Save final model
-    final_path = checkpoint_dir / "final_model.pt"
-    save_checkpoint(model, optimizer, cfg.model.epochs, val_loss, final_path)
+    # Save last model at the end of training
+    if cfg.checkpoints.save_last:
+        last_path = checkpoint_dir / "last_model.pt"
+        save_checkpoint(model, optimizer, cfg.model.epochs, val_loss, last_path)
+        logger.info(f"Last model saved to: {last_path}")
+    
+    # Finish W&B run
+    wandb.finish()
     
     end_time = time.perf_counter()
     logger.info(f"Training completed in {end_time - start_time:.2f} seconds")

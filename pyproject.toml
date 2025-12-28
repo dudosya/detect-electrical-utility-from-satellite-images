@@ -12,14 +12,20 @@ dependencies = [
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
     "pyyaml>=6.0.3",
+    "scikit-learn>=1.8.0",
     "segmentation-models-pytorch>=0.5.0",
     "torch",
     "torchvision",
     "typer>=0.20.1",
+    "wandb>=0.23.1",
 ]
 
 [project.scripts]
 main = "detect_electrical_utility_from_satellite_images.main:app"
+test-cpu = "dev_scripts.test_pipeline:test_cpu"
+test-gpu = "dev_scripts.test_pipeline:test_gpu"
+test-dataset = "dev_scripts.test_pipeline:test_dataset"
+test-real-data = "dev_scripts.test_pipeline:test_real_data"
 
 [build-system]
 requires = ["uv_build>=0.9.18,<0.10.0"]

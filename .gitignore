@@ -4,6 +4,10 @@ output_imgs/
 # data
 data/
 
+wandb/
+
+.clinerules/
+
 # reposcribe
 reposcribe.md
 
