@@ -18,7 +18,7 @@ import wandb
 from .config import AppConfig
 from .dataset import SatteliteImgsDataset
 from .losses import calculate_class_weights, create_loss_function
-from .metrics import calculate_all_metrics, visualize_predictions
+from .metrics import calculate_all_metrics
 from .model import count_parameters, create_model, save_checkpoint
 from .utils import split_by_image, validate_split_by_image
 
@@ -82,7 +82,7 @@ def train_epoch(
     epoch: int,
     cfg,
     gradient_accumulation_steps: int = 1,
-) -> tuple[float, dict[str, float]]:
+) -> tuple[float, dict[str, float | dict[int, float]]]:
     """Train for one epoch with metrics tracking.
 
     Args:
@@ -182,36 +182,64 @@ def validate(
     dataloader: DataLoader,
     criterion: nn.Module,
     device: str,
-) -> float:
-    """Validate model.
+    cfg,
+) -> tuple[float, dict[str, float | dict[int, float]]]:
+    """Validate model with metrics tracking.
 
     Args:
         model: Model to validate
         dataloader: Validation data loader
         criterion: Loss function
         device: Device to validate on
+        cfg: Configuration object
 
     Returns:
-        Average validation loss
+        Tuple of (average loss, metrics dictionary)
     """
     model.eval()
     total_loss = 0.0
     num_batches = 0
+
+    # Initialize metrics accumulators
+    all_predictions = []
+    all_targets = []
 
     with torch.no_grad():
         for images, masks in dataloader:
             images = images.to(device)
             masks = masks.to(device)
 
+            # Ensure masks have correct shape (batch_size, height, width)
+            if masks.ndim == 4:  # If masks have channel dimension
+                masks = masks.squeeze(1)  # Remove channel dimension
+
             outputs = model(images)
             loss = criterion(outputs, masks)
+
+            # Store predictions and targets for metrics
+            predictions = torch.argmax(outputs, dim=1)
+            all_predictions.append(predictions.cpu())
+            all_targets.append(masks.cpu())
 
             total_loss += loss.item()
             num_batches += 1
 
+    # Calculate metrics
+    if len(all_predictions) > 0:
+        all_predictions = torch.cat(all_predictions)
+        all_targets = torch.cat(all_targets)
+        metrics = calculate_all_metrics(
+            all_predictions,
+            all_targets,
+            cfg.model.classes,
+            cfg.metrics.dict(),
+        )
+    else:
+        metrics = {}
+
     avg_loss = total_loss / max(num_batches, 1)
     logger.info(f"Validation complete: avg loss = {avg_loss:.4f}")
-    return avg_loss
+    return avg_loss, metrics
 
 
 def set_seed(seed: int) -> None:
@@ -530,7 +558,7 @@ def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
         )
 
         # Validate
-        val_loss = validate(model, val_loader, criterion, device)
+        val_loss, val_metrics = validate(model, val_loader, criterion, device, cfg)
 
         # Update learning rate scheduler
         if scheduler is not None:
@@ -540,13 +568,18 @@ def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
                 scheduler.step()
 
         # Log validation metrics
-        wandb.log(
-            {
-                "val/loss": val_loss,
-                "lr": optimizer.param_groups[0]["lr"],
-            },
-            step=epoch,
-        )
+        log_data = {
+            "val/loss": val_loss,
+            "lr": optimizer.param_groups[0]["lr"],
+        }
+        for metric_name, metric_value in val_metrics.items():
+            if isinstance(metric_value, dict):
+                for class_idx, class_value in metric_value.items():
+                    log_data[f"val/{metric_name}_class_{class_idx}"] = class_value
+            else:
+                log_data[f"val/{metric_name}"] = metric_value
+        
+        wandb.log(log_data, step=epoch)
 
         # Check if we should save best model
         should_save_best = False

@@ -2,14 +2,6 @@
 
 A machine learning project for semantic segmentation of electrical utilities in satellite imagery using PyTorch.
 
-## Key Features
-
-- **Modular Configuration**: Clean, type-safe configuration system using Pydantic
-- **Multiple Architectures**: Support for UNet, DeepLabV3, and FPN with various backbones
-- **Comprehensive Training**: Mixed precision, gradient accumulation, W&B integration
-- **Production Ready**: Type hints, comprehensive testing, and code quality tools
-- **Flexible Data Pipeline**: Support for both mock data (testing) and real satellite data
-
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) - Fast Python package manager
@@ -193,30 +185,6 @@ Supported backbones:
 - **Dice Coefficient**
 - **Accuracy, Precision, Recall, F1-Score**
 - **Per-class metrics**
-
-## Troubleshooting
-
-### Common Issues
-
-1. **CUDA not available**:
-
-   ```bash
-   # Check CUDA installation
-   uv run python -c "import torch; print(torch.cuda.is_available())"
-   ```
-
-2. **Missing dependencies**:
-
-   ```bash
-   # Re-sync dependencies
-   uv sync
-   ```
-
-3. **Configuration errors**:
-   ```bash
-   # Validate configuration
-   uv run python -c "from detect_electrical_utility_from_satellite_images.config import AppConfig; import yaml; cfg = AppConfig(**yaml.safe_load(open('config.yaml'))); print('Config valid')"
-   ```
 
 ## Development Guidelines
 

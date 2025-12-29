@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 logger = logging.getLogger(__name__)
 
@@ -294,6 +295,252 @@ def calculate_precision_recall_f1(
     raise ValueError(f"Unknown average type: {average}")
 
 
+def extract_boundary(
+    mask: torch.Tensor,
+    dilation_radius: int = 1,
+) -> torch.Tensor:
+    """
+    Extract boundary pixels from a segmentation mask.
+
+    Args:
+        mask: Segmentation mask [H, W] or [batch_size, H, W]
+        dilation_radius: Radius for boundary dilation
+
+    Returns:
+        Binary boundary mask
+    """
+    if mask.ndim == 2:
+        mask = mask.unsqueeze(0)  # Add batch dimension
+    
+    # Convert to float for convolution
+    mask_float = mask.float()
+    
+    # Create a simple edge kernel
+    kernel = torch.ones(1, 1, 3, 3, device=mask.device) / 9.0
+    
+    # Apply convolution to smooth the mask
+    smoothed = F.conv2d(
+        mask_float.unsqueeze(1),  # Add channel dimension
+        kernel,
+        padding=1,
+    )
+    
+    # Boundary is where the smoothed value is between 0 and 1
+    boundary = (smoothed > 0) & (smoothed < 1)
+    
+    # Remove added dimensions
+    boundary = boundary.squeeze(1)
+    
+    if dilation_radius > 1:
+        # Create dilation kernel
+        kernel_size = 2 * dilation_radius + 1
+        dilation_kernel = torch.ones(
+            1, 1, kernel_size, kernel_size, device=mask.device
+        )
+        boundary = F.conv2d(
+            boundary.float().unsqueeze(1),
+            dilation_kernel,
+            padding=dilation_radius,
+        ) > 0
+        boundary = boundary.squeeze(1)
+    
+    return boundary
+
+
+def calculate_boundary_iou(
+    predictions: torch.Tensor,
+    targets: torch.Tensor,
+    num_classes: int,
+    boundary_dilation: int = 2,
+    average: str = "macro",
+    ignore_index: int | None = None,
+) -> float | dict[int, float]:
+    """
+    Calculate Boundary IoU (Intersection over Union on boundary pixels).
+
+    Args:
+        predictions: Predicted class indices [batch_size, height, width] or [height, width]
+        targets: Ground truth class indices [batch_size, height, width] or [height, width]
+        num_classes: Number of classes
+        boundary_dilation: Dilation radius for boundary extraction
+        average: "macro", "micro", "weighted", or "none" for per-class
+        ignore_index: Class index to ignore (e.g., background)
+
+    Returns:
+        Boundary IoU score(s) based on average type
+    """
+    if predictions.ndim == 2:
+        predictions = predictions.unsqueeze(0)
+    if targets.ndim == 2:
+        targets = targets.unsqueeze(0)
+    
+    batch_size = predictions.shape[0]
+    
+    # Initialize accumulators
+    total_intersection = torch.zeros(num_classes, device=predictions.device)
+    total_union = torch.zeros(num_classes, device=predictions.device)
+    
+    for batch_idx in range(batch_size):
+        pred = predictions[batch_idx]
+        target = targets[batch_idx]
+        
+        if ignore_index is not None:
+            # Create mask for valid pixels
+            valid_mask = target != ignore_index
+            pred = pred[valid_mask]
+            target = target[valid_mask]
+            if pred.numel() == 0:
+                continue
+        
+        for c in range(num_classes):
+            # Create binary masks for class c
+            pred_binary = (pred == c)
+            target_binary = (target == c)
+            
+            # Skip if no pixels of this class in ground truth
+            if not target_binary.any():
+                continue
+            
+            # Extract boundaries
+            pred_boundary = extract_boundary(pred_binary, boundary_dilation)
+            target_boundary = extract_boundary(target_binary, boundary_dilation)
+            
+            # Calculate intersection and union
+            intersection = (pred_boundary & target_boundary).sum()
+            union = (pred_boundary | target_boundary).sum()
+            
+            total_intersection[c] += intersection
+            total_union[c] += union
+    
+    # Calculate Boundary IoU per class
+    boundary_ious = []
+    for c in range(num_classes):
+        if total_union[c] > 0:
+            boundary_ious.append(total_intersection[c].float() / total_union[c].float())
+        else:
+            boundary_ious.append(torch.tensor(0.0, device=predictions.device))
+    
+    boundary_ious = torch.stack(boundary_ious)
+    
+    if average == "none":
+        return {i: boundary_ious[i].item() for i in range(num_classes)}
+    if average == "macro":
+        # Average over classes that have at least some boundary pixels
+        valid_classes = total_union > 0
+        if valid_classes.any():
+            return torch.mean(boundary_ious[valid_classes]).item()
+        return 0.0
+    if average == "micro":
+        total_inter = total_intersection.sum()
+        total_un = total_union.sum()
+        return (total_inter.float() / total_un.float()).item() if total_un > 0 else 0.0
+    if average == "weighted":
+        # Weight by number of boundary pixels in ground truth
+        weights = total_union.float() / total_union.sum().float()
+        return torch.sum(boundary_ious * weights).item()
+    raise ValueError(f"Unknown average type: {average}")
+
+
+def calculate_boundary_f1(
+    predictions: torch.Tensor,
+    targets: torch.Tensor,
+    num_classes: int,
+    boundary_dilation: int = 2,
+    average: str = "macro",
+    ignore_index: int | None = None,
+) -> float | dict[int, float]:
+    """
+    Calculate Boundary F1 score (Dice coefficient on boundary pixels).
+
+    Args:
+        predictions: Predicted class indices [batch_size, height, width] or [height, width]
+        targets: Ground truth class indices [batch_size, height, width] or [height, width]
+        num_classes: Number of classes
+        boundary_dilation: Dilation radius for boundary extraction
+        average: "macro", "micro", "weighted", or "none" for per-class
+        ignore_index: Class index to ignore (e.g., background)
+
+    Returns:
+        Boundary F1 score(s) based on average type
+    """
+    if predictions.ndim == 2:
+        predictions = predictions.unsqueeze(0)
+    if targets.ndim == 2:
+        targets = targets.unsqueeze(0)
+    
+    batch_size = predictions.shape[0]
+    
+    # Initialize accumulators
+    total_intersection = torch.zeros(num_classes, device=predictions.device)
+    total_pred_boundary = torch.zeros(num_classes, device=predictions.device)
+    total_target_boundary = torch.zeros(num_classes, device=predictions.device)
+    
+    for batch_idx in range(batch_size):
+        pred = predictions[batch_idx]
+        target = targets[batch_idx]
+        
+        if ignore_index is not None:
+            # Create mask for valid pixels
+            valid_mask = target != ignore_index
+            pred = pred[valid_mask]
+            target = target[valid_mask]
+            if pred.numel() == 0:
+                continue
+        
+        for c in range(num_classes):
+            # Create binary masks for class c
+            pred_binary = (pred == c)
+            target_binary = (target == c)
+            
+            # Skip if no pixels of this class in ground truth
+            if not target_binary.any():
+                continue
+            
+            # Extract boundaries
+            pred_boundary = extract_boundary(pred_binary, boundary_dilation)
+            target_boundary = extract_boundary(target_binary, boundary_dilation)
+            
+            # Calculate intersection and totals
+            intersection = (pred_boundary & target_boundary).sum()
+            total_pred_boundary[c] += pred_boundary.sum()
+            total_target_boundary[c] += target_boundary.sum()
+            total_intersection[c] += intersection
+    
+    # Calculate Boundary F1 per class
+    boundary_f1_scores = []
+    for c in range(num_classes):
+        if total_pred_boundary[c] + total_target_boundary[c] > 0:
+            f1 = 2 * total_intersection[c].float() / (
+                total_pred_boundary[c].float() + total_target_boundary[c].float()
+            )
+            boundary_f1_scores.append(f1)
+        else:
+            boundary_f1_scores.append(torch.tensor(0.0, device=predictions.device))
+    
+    boundary_f1_scores = torch.stack(boundary_f1_scores)
+    
+    if average == "none":
+        return {i: boundary_f1_scores[i].item() for i in range(num_classes)}
+    if average == "macro":
+        # Average over classes that have at least some boundary pixels
+        valid_classes = (total_pred_boundary + total_target_boundary) > 0
+        if valid_classes.any():
+            return torch.mean(boundary_f1_scores[valid_classes]).item()
+        return 0.0
+    if average == "micro":
+        total_inter = total_intersection.sum()
+        total_pred = total_pred_boundary.sum()
+        total_target = total_target_boundary.sum()
+        if total_pred + total_target > 0:
+            return (2 * total_inter.float() / (total_pred.float() + total_target.float())).item()
+        return 0.0
+    if average == "weighted":
+        # Weight by number of boundary pixels in ground truth
+        weights = total_target_boundary.float() / total_target_boundary.sum().float()
+        return torch.sum(boundary_f1_scores * weights).item()
+    raise ValueError(f"Unknown average type: {average}")
+
+
 def calculate_all_metrics(
     predictions: torch.Tensor,
     targets: torch.Tensor,
@@ -346,6 +593,27 @@ def calculate_all_metrics(
             ignore_index=ignore_index,
         )
         results.update(prf_results)
+
+    # Boundary metrics
+    if "boundary_iou" in metrics_config.get("track", []):
+        results["boundary_iou"] = calculate_boundary_iou(
+            predictions,
+            targets,
+            num_classes,
+            boundary_dilation=metrics_config.get("boundary_dilation", 2),
+            average=metrics_config.get("boundary_iou_average", "macro"),
+            ignore_index=ignore_index,
+        )
+
+    if "boundary_f1" in metrics_config.get("track", []):
+        results["boundary_f1"] = calculate_boundary_f1(
+            predictions,
+            targets,
+            num_classes,
+            boundary_dilation=metrics_config.get("boundary_dilation", 2),
+            average=metrics_config.get("boundary_f1_average", "macro"),
+            ignore_index=ignore_index,
+        )
 
     return results
 

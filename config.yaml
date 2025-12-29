@@ -13,14 +13,14 @@ logging:
   file_handler_lvl: "debug"
 
 model:
-  architecture: "unet" # unet, deeplabv3, fpn
+  architecture: "fpn" # unet, deeplabv3, fpn
   encoder_name: "mobilenet_v2" # resnet18, resnet34, resnet50, efficientnet-b0, mobilenet_v2
   encoder_weights: null # imagenet or null
   in_channels: 3
   classes: 6
   learning_rate: 0.001
   batch_size: 4 # Increased for faster training (adjust based on GPU memory)
-  epochs: 10 # Quick but meaningful experiments
+  epochs: 5 # Quick but meaningful experiments
   device: "cuda" # cpu or cuda
 
 # Weights & Biases Configuration
@@ -36,10 +36,23 @@ wandb:
 
 # Metrics Configuration
 metrics:
-  track: ["iou", "dice", "accuracy"]
+  track:
+    [
+      "iou",
+      "dice",
+      "accuracy",
+      "precision",
+      "recall",
+      "f1",
+      "boundary_iou",
+      "boundary_f1",
+    ]
   iou_average: "macro" # macro, micro, weighted
   dice_average: "macro"
   f1_average: "macro"
+  boundary_iou_average: "macro"
+  boundary_f1_average: "macro"
+  boundary_dilation: 2 # Dilation radius for boundary extraction
   log_samples: 2 # Reduced for faster logging
   sample_indices: [0, 1] # Specific indices to always log
 

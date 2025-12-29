@@ -11,7 +11,10 @@ class MetricsConfig(pydantic.BaseModel):
     """Metrics tracking configuration."""
 
     track: list[
-        typing.Literal["iou", "dice", "accuracy", "precision", "recall", "f1"]
+        typing.Literal[
+            "iou", "dice", "accuracy", "precision", "recall", "f1", 
+            "boundary_iou", "boundary_f1"
+        ]
     ] = pydantic.Field(
         default_factory=lambda: [
             "iou",
@@ -32,6 +35,15 @@ class MetricsConfig(pydantic.BaseModel):
 
     f1_average: typing.Literal["macro", "micro", "weighted"] = "macro"
     """Averaging method for F1 score."""
+
+    boundary_iou_average: typing.Literal["macro", "micro", "weighted"] = "macro"
+    """Averaging method for Boundary IoU."""
+
+    boundary_f1_average: typing.Literal["macro", "micro", "weighted"] = "macro"
+    """Averaging method for Boundary F1."""
+
+    boundary_dilation: int = pydantic.Field(default=2, ge=1, le=10)
+    """Dilation radius for boundary extraction (1-10)."""
 
     log_samples: int = 4
     """Number of sample predictions to log."""
