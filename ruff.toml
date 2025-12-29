@@ -1,0 +1,53 @@
+# See: https://docs.astral.sh/ruff/configuration/
+
+line-length = 88
+target-version = "py313"
+
+[lint]
+select = [
+    "E",
+    "F",
+    "W",
+    "I",
+    "N",
+    "UP",
+    "YTT",
+    "B",
+    "A",
+    "C4",
+    "DTZ",
+    "EM",
+    "ISC",
+    "PIE",
+    "PT",
+    "RET",
+    "SIM",
+    "T10",
+    "T20",
+    "TID",
+    "ARG",
+    "BLE",
+    "COM",
+    "ERA",
+    "PD",
+    "PGH",
+    "PTH",
+    "RUF",
+    "S",
+    "INT",
+    "TRY",
+    "SLOT",
+    "RSE",
+    "NPY",
+    "LOG",
+    "FURB",
+    "AIR",
+    "PERF",
+]
+ignore = ["E501", "F401", "F403", "A001", "ANN", "D"]
+
+[lint.isort]
+known-first-party = ["detect_electrical_utility_from_satellite_images"]
+
+[format]
+quote-style = "double"

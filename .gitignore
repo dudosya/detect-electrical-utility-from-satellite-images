@@ -7,6 +7,7 @@ data/
 wandb/
 
 .clinerules/
+evaluation_results/
 
 # reposcribe
 reposcribe.md

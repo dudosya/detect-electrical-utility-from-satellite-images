@@ -46,8 +46,9 @@ metrics:
   log_samples: 4 # Number of sample predictions to log per epoch
   sample_indices: [0, 1, 2, 3] # Specific indices to always log
 
-# New: Training Enhancements
+# Training Configuration
 training:
+  experiment_name: "baseline" # Used for folder naming and W&B grouping
   seed: 42 # Random seed for reproducibility
   gradient_accumulation_steps: 1 # Effective batch size = batch_size * steps
   mixed_precision: false # Enable AMP for faster training (requires compatible GPU)
@@ -72,7 +73,11 @@ training:
     # SGD parameters
     momentum: 0.9
     nesterov: true
+  loss_function: "cross_entropy" # cross_entropy, dice, focal, combined
   class_weights: null # null for equal weights, or list of weights per class
+  auto_class_weights: false # Automatically calculate class weights from dataset
+  loss_alpha: 0.5 # Weight for combined loss (CrossEntropy + Dice)
+  loss_gamma: 2.0 # Gamma parameter for focal loss
 
 # New: Data Augmentation Configuration
 augmentation:
@@ -86,9 +91,11 @@ augmentation:
   gaussian_blur: true
   blur_kernel_size: 3
 
-# New: Checkpoint Configuration
+# Checkpoint Configuration
 checkpoints:
   save_best: true
   save_last: true
   metric_to_monitor: "val_loss" # Metric to determine "best" model
   mode: "min" # Minimize validation loss
+  min_delta: 0.001 # Minimum improvement required to save checkpoint
+  save_every_n_epochs: null # Save every N epochs regardless of improvement (null to disable)

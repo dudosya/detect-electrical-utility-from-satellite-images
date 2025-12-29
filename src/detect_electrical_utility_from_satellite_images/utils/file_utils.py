@@ -1,9 +1,10 @@
+import logging
 from pathlib import Path
 
-import logging
 logger = logging.getLogger(__name__)
 
-def drop_jpg_paths_with_no_npz_pair(jpg_paths: list[Path])-> list[Path]:
+
+def drop_jpg_paths_with_no_npz_pair(jpg_paths: list[Path]) -> list[Path]:
     new_list = []
     for jpg_path in jpg_paths:
         if jpg_path.with_suffix(".npz").exists():
