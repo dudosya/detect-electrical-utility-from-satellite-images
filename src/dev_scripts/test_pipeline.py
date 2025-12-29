@@ -19,7 +19,7 @@ def run_command(cmd: list[str]) -> bool:
         # Add src to PYTHONPATH for module discovery
         env = {**os.environ, "PYTHONPATH": "src"}
         result = subprocess.run(
-            cmd, capture_output=True, text=True, check=True, env=env
+            cmd, capture_output=True, text=True, check=True, env=env,
         )
         logger.info(f"Command output:\n{result.stdout}")
         if result.stderr:
@@ -43,7 +43,7 @@ def test_cpu() -> None:
             "--config",
             "config_debug_cpu",
             "train",
-        ]
+        ],
     )
     if success:
         logger.info("CPU pipeline test PASSED")
@@ -63,7 +63,7 @@ def test_gpu() -> None:
             "--config",
             "config_debug_gpu",
             "train",
-        ]
+        ],
     )
     if success:
         logger.info("GPU pipeline test PASSED")
@@ -83,7 +83,7 @@ def test_dataset() -> None:
             "--config",
             "config_debug_cpu",
             "test-dataset",
-        ]
+        ],
     )
     if success:
         logger.info("Dataset test PASSED")
@@ -103,7 +103,7 @@ def test_real_data() -> None:
     if not img_dir.exists() or not mask_dir.exists():
         logger.error(f"Image or mask directory not found: {img_dir}, {mask_dir}")
         logger.error(
-            "Please run preprocessing first: uv run main preprocess --config config_debug_cpu"
+            "Please run preprocessing first: uv run main preprocess --config config_debug_cpu",
         )
         sys.exit(1)
 
@@ -113,12 +113,12 @@ def test_real_data() -> None:
     if len(img_files) == 0 or len(mask_files) == 0:
         logger.error(f"No PNG files found in {img_dir} or {mask_dir}")
         logger.error(
-            "Please run preprocessing first: uv run main preprocess --config config_debug_cpu"
+            "Please run preprocessing first: uv run main preprocess --config config_debug_cpu",
         )
         sys.exit(1)
 
     logger.info(
-        f"Found {len(img_files)} image patches and {len(mask_files)} mask patches"
+        f"Found {len(img_files)} image patches and {len(mask_files)} mask patches",
     )
 
     # Run training with real data
@@ -131,7 +131,7 @@ def test_real_data() -> None:
             "config_debug_cpu",
             "train",
             "--real-data",
-        ]
+        ],
     )
 
     if success:

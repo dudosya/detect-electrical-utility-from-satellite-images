@@ -121,15 +121,15 @@ def pad_to_patch_size(img_arr: np.ndarray, patch_size: int) -> np.ndarray:
     # apply the paddings
     if img_arr.ndim == 3:
         padded_arr = np.pad(
-            img_arr, pad_width=((0, pad_h), (0, pad_w), (0, 0)), mode="constant"
+            img_arr, pad_width=((0, pad_h), (0, pad_w), (0, 0)), mode="constant",
         )
     elif img_arr.ndim == 2:
         padded_arr = np.pad(
-            img_arr, pad_width=((0, pad_h), (0, pad_w)), mode="constant"
+            img_arr, pad_width=((0, pad_h), (0, pad_w)), mode="constant",
         )
     else:
         raise ValueError(
-            "image arr is expected to have two types of dims: (H,W,C) or (H,W)"
+            "image arr is expected to have two types of dims: (H,W,C) or (H,W)",
         )
 
     # return the padded arr

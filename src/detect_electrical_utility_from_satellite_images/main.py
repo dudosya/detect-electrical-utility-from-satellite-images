@@ -35,7 +35,7 @@ def manage_internal_state(
     config: Annotated[
         str,
         typer.Option(
-            help="relative path to the config file. no need to write the extension ie .yaml"
+            help="relative path to the config file. no need to write the extension ie .yaml",
         ),
     ] = "config",
 ):
@@ -198,13 +198,13 @@ def train(
 # Standalone train command for direct invocation (used by pyproject.toml train script)
 def train_standalone(
     config: str = typer.Option(
-        "config", help="Relative path to config file (without .yaml extension)"
+        "config", help="Relative path to config file (without .yaml extension)",
     ),
     real_data: bool = typer.Option(
-        False, "--real-data", help="Use real data instead of mock"
+        False, "--real-data", help="Use real data instead of mock",
     ),
     log_level: str = typer.Option(
-        "info", "--log-level", help="Logging level: debug, info, warning, error"
+        "info", "--log-level", help="Logging level: debug, info, warning, error",
     ),
 ):
     """Standalone train command for direct invocation.

@@ -130,7 +130,7 @@ class TrainingConfig(pydantic.BaseModel):
         if v is not None:
             if len(v) < 2:
                 raise ValueError(
-                    f"class_weights must have at least 2 values (got {len(v)})"
+                    f"class_weights must have at least 2 values (got {len(v)})",
                 )
             if any(w <= 0 for w in v):
                 raise ValueError("class_weights must be positive values")

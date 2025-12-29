@@ -39,7 +39,7 @@ def calculate_iou(
 
     # Calculate confusion matrix
     cm = torch.zeros(
-        (num_classes, num_classes), dtype=torch.int64, device=predictions.device
+        (num_classes, num_classes), dtype=torch.int64, device=predictions.device,
     )
     for i in range(num_classes):
         for j in range(num_classes):
@@ -107,7 +107,7 @@ def calculate_dice(
 
     # Calculate confusion matrix
     cm = torch.zeros(
-        (num_classes, num_classes), dtype=torch.int64, device=predictions.device
+        (num_classes, num_classes), dtype=torch.int64, device=predictions.device,
     )
     for i in range(num_classes):
         for j in range(num_classes):
@@ -204,7 +204,7 @@ def calculate_precision_recall_f1(
 
     # Calculate confusion matrix
     cm = torch.zeros(
-        (num_classes, num_classes), dtype=torch.int64, device=predictions.device
+        (num_classes, num_classes), dtype=torch.int64, device=predictions.device,
     )
     for i in range(num_classes):
         for j in range(num_classes):
@@ -389,7 +389,7 @@ def visualize_predictions(
                 [255, 255, 0],  # Class 4 - yellow
                 [255, 0, 255],  # Class 5 - magenta
                 [0, 255, 255],  # Class 6 - cyan
-            ]
+            ],
         )
 
         colored = np.zeros((*mask.shape, 3), dtype=np.uint8)

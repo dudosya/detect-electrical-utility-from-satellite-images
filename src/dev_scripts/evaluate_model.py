@@ -86,7 +86,7 @@ def create_dataloader(cfg: AppConfig, split: str = "val") -> DataLoader:
 
     if len(img_patch_paths) == 0:
         raise ValueError(
-            f"No image patches found in {cfg.paths.output_dir / 'img_patches'}"
+            f"No image patches found in {cfg.paths.output_dir / 'img_patches'}",
         )
 
     logger.info(f"Found {len(img_patch_paths)} image patches")
@@ -97,7 +97,7 @@ def create_dataloader(cfg: AppConfig, split: str = "val") -> DataLoader:
     transforms = v2.Compose(
         [
             v2.ToDtype(dtype=torch.float32, scale=True),
-        ]
+        ],
     )
 
     dataset = SatteliteImgsDataset(
@@ -279,28 +279,28 @@ def create_visualizations(results: dict[str, Any], output_dir: Path):
 @app.command()
 def evaluate(
     config: Path = typer.Option(
-        Path("config.yaml"), help="Path to config file (default: config.yaml)"
+        Path("config.yaml"), help="Path to config file (default: config.yaml)",
     ),
     checkpoint: Path | None = typer.Option(
-        None, help="Direct path to model checkpoint (.pt file)"
+        None, help="Direct path to model checkpoint (.pt file)",
     ),
     run_id: str | None = typer.Option(None, help="Specific W&B run ID to evaluate"),
     latest_run: int = typer.Option(
-        1, help="N-th latest run to evaluate (1=latest, 2=previous, etc.)"
+        1, help="N-th latest run to evaluate (1=latest, 2=previous, etc.)",
     ),
     model_type: str = typer.Option(
-        "best", help="Model type to evaluate: 'best' or 'last'"
+        "best", help="Model type to evaluate: 'best' or 'last'",
     ),
     wandb_dir: Path = typer.Option(
-        Path("wandb"), help="Path to W&B runs directory (default: wandb/)"
+        Path("wandb"), help="Path to W&B runs directory (default: wandb/)",
     ),
     output_dir: Path | None = typer.Option(
-        None, help="Directory to save evaluation results"
+        None, help="Directory to save evaluation results",
     ),
     split: str = typer.Option("val", help="Data split to evaluate on: 'val' or 'all'"),
     num_samples: int = typer.Option(5, help="Number of samples to visualize"),
     log_level: str = typer.Option(
-        "info", help="Logging level: debug, info, warning, error"
+        "info", help="Logging level: debug, info, warning, error",
     ),
 ):
     """
@@ -332,7 +332,7 @@ def evaluate(
         # Validate input
         if checkpoint is None and run_id is None and latest_run < 1:
             raise ValueError(
-                "Either checkpoint, run_id, or latest_run must be provided"
+                "Either checkpoint, run_id, or latest_run must be provided",
             )
 
         # Load config
@@ -369,7 +369,7 @@ def evaluate(
                 # Use N-th latest run
                 if latest_run > len(runs):
                     raise ValueError(
-                        f"Only {len(runs)} runs available, cannot get run #{latest_run}"
+                        f"Only {len(runs)} runs available, cannot get run #{latest_run}",
                     )
                 run_dir = runs[latest_run - 1]
 
@@ -448,10 +448,10 @@ def evaluate(
 @app.command()
 def list_checkpoints(
     wandb_dir: Path = typer.Option(
-        Path("wandb"), help="Path to W&B runs directory (default: wandb/)"
+        Path("wandb"), help="Path to W&B runs directory (default: wandb/)",
     ),
     run_id: str | None = typer.Option(
-        None, help="Specific run ID to list checkpoints for"
+        None, help="Specific run ID to list checkpoints for",
     ),
 ):
     """

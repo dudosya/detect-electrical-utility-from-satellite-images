@@ -60,20 +60,20 @@ detect-electrical-utility-from-satellite-images/
 
 ```bash
 # Create patches from satellite images
-uv run main preprocess --config config
+uv run main preprocess
 ```
 
 ### 2. Train a Model
 
 ```bash
 # Train with mock data (for testing)
-uv run main train --config config
+uv run main train
 
 # Train with real data
-uv run main train --config config --real-data
+uv run main train --real-data
 
 # Train with debug logging
-uv run main train --config config --real-data --log-level debug
+uv run main --config config train --real-data --log-level debug
 ```
 
 ### 3. Alternative Entry Points
@@ -123,17 +123,6 @@ training:
   loss_function: "cross_entropy"
 ```
 
-### Creating Experiment Configs
-
-```bash
-# Copy the template
-cp config_experiment_template.yaml experiment_configs/my_experiment.yaml
-
-# Edit the configuration
-# Run the experiment
-uv run run-experiments --config-dir experiment_configs
-```
-
 ## Development
 
 ### Testing
@@ -144,12 +133,6 @@ uv run pytest tests/
 
 # Run specific test
 uv run pytest tests/test_config.py -v
-
-# Run test pipeline
-uv run test-cpu
-uv run test-gpu
-uv run test-dataset
-uv run test-real-data
 ```
 
 ### Code Quality

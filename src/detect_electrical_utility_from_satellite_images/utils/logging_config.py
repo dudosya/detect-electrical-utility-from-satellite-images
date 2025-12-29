@@ -30,7 +30,7 @@ def setup_logger(
 
     # define formatter
     formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     # define filename

@@ -18,7 +18,7 @@ class ModelConfig(pydantic.BaseModel):
     """Model architecture to use."""
 
     encoder_name: typing.Literal[
-        "resnet18", "resnet34", "resnet50", "efficientnet-b0", "mobilenet_v2"
+        "resnet18", "resnet34", "resnet50", "efficientnet-b0", "mobilenet_v2",
     ]
     """Backbone encoder name."""
 
@@ -55,7 +55,7 @@ class ModelConfig(pydantic.BaseModel):
 
             if self.device == "cuda" and not torch.cuda.is_available():
                 logger.warning(
-                    "CUDA requested but not available. Changing device to 'cpu'."
+                    "CUDA requested but not available. Changing device to 'cpu'.",
                 )
                 self.device = "cpu"
         except ImportError:
@@ -80,7 +80,7 @@ class ModelConfig(pydantic.BaseModel):
             logger.warning(f"batch_size={v} is large. Ensure sufficient GPU memory.")
         if v == 1:
             logger.info(
-                "batch_size=1 may lead to unstable gradients. Consider gradient_accumulation_steps."
+                "batch_size=1 may lead to unstable gradients. Consider gradient_accumulation_steps.",
             )
 
         return v
@@ -98,7 +98,7 @@ class ModelConfig(pydantic.BaseModel):
         """
         if v > 0.1:
             logger.warning(
-                f"learning_rate={v} is very high. Typical values are 0.001 or lower."
+                f"learning_rate={v} is very high. Typical values are 0.001 or lower.",
             )
         if v < 1e-6:
             logger.warning(f"learning_rate={v} is very low. Training may be very slow.")

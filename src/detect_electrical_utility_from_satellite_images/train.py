@@ -57,7 +57,7 @@ def create_mock_dataloader(
         def __getitem__(self, idx):
             # Generate random image (3 channels, normalized to [0, 1])
             image = torch.rand(
-                3, self.image_size[0], self.image_size[1], device=self.device
+                3, self.image_size[0], self.image_size[1], device=self.device,
             )
             # Generate random mask with class indices
             mask = torch.randint(
@@ -138,7 +138,7 @@ def train_epoch(
 
         if batch_idx % 10 == 0:
             logger.debug(
-                f"Epoch {epoch}, Batch {batch_idx}: loss = {loss.item() * gradient_accumulation_steps:.4f}"
+                f"Epoch {epoch}, Batch {batch_idx}: loss = {loss.item() * gradient_accumulation_steps:.4f}",
             )
 
     # Handle remaining gradients if any
@@ -290,10 +290,10 @@ def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
         try:
             # Load real dataset for weight calculation
             img_patch_paths = sorted(
-                (cfg.paths.output_dir / "img_patches").glob("*.png")
+                (cfg.paths.output_dir / "img_patches").glob("*.png"),
             )
             mask_patch_paths = sorted(
-                (cfg.paths.output_dir / "mask_patches").glob("*.png")
+                (cfg.paths.output_dir / "mask_patches").glob("*.png"),
             )
 
             if len(img_patch_paths) > 0:
@@ -302,7 +302,7 @@ def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
                 transforms = v2.Compose(
                     [
                         v2.ToDtype(dtype=torch.float32, scale=True),
-                    ]
+                    ],
                 )
 
                 dataset = SatteliteImgsDataset(
@@ -312,7 +312,7 @@ def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
                 )
 
                 class_weights = calculate_class_weights(
-                    dataset, cfg.model.classes, device
+                    dataset, cfg.model.classes, device,
                 )
                 logger.info(f"Auto-calculated class weights: {class_weights.tolist()}")
             else:
@@ -418,15 +418,15 @@ def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
 
         if len(img_patch_paths) == 0:
             raise ValueError(
-                f"No image patches found in {cfg.paths.output_dir / 'img_patches'}"
+                f"No image patches found in {cfg.paths.output_dir / 'img_patches'}",
             )
         if len(mask_patch_paths) == 0:
             raise ValueError(
-                f"No mask patches found in {cfg.paths.output_dir / 'mask_patches'}"
+                f"No mask patches found in {cfg.paths.output_dir / 'mask_patches'}",
             )
 
         logger.info(
-            f"Found {len(img_patch_paths)} image patches and {len(mask_patch_paths)} mask patches"
+            f"Found {len(img_patch_paths)} image patches and {len(mask_patch_paths)} mask patches",
         )
 
         # Define transforms (same as in dataset.py)
@@ -442,9 +442,9 @@ def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
                 v2.Lambda(
                     lambda x: x.to(torch.long)
                     if hasattr(x, "__class__") and x.__class__.__name__ == "Mask"
-                    else x
+                    else x,
                 ),
-            ]
+            ],
         )
 
         # Create dataset
@@ -476,7 +476,7 @@ def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
         )
 
         logger.info(
-            f"Created dataloaders: {len(train_loader)} train batches, {len(val_loader)} val batches"
+            f"Created dataloaders: {len(train_loader)} train batches, {len(val_loader)} val batches",
         )
 
     # Training loop
@@ -533,7 +533,7 @@ def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
                     best_loss = val_loss
                     should_save_best = True
                     logger.info(
-                        f"Significant improvement: {improvement:.6f} > {cfg.checkpoints.min_delta}"
+                        f"Significant improvement: {improvement:.6f} > {cfg.checkpoints.min_delta}",
                     )
             else:
                 # For maximization (e.g., accuracy)
@@ -544,7 +544,7 @@ def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
                     best_loss = val_loss
                     should_save_best = True
                     logger.info(
-                        f"Significant improvement: {improvement:.6f} > {cfg.checkpoints.min_delta}"
+                        f"Significant improvement: {improvement:.6f} > {cfg.checkpoints.min_delta}",
                     )
 
         # Check if we should save based on frequency
@@ -553,7 +553,7 @@ def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
             if epoch - last_save_epoch >= cfg.checkpoints.save_every_n_epochs:
                 should_save_frequency = True
                 logger.info(
-                    f"Frequency-based save triggered (every {cfg.checkpoints.save_every_n_epochs} epochs)"
+                    f"Frequency-based save triggered (every {cfg.checkpoints.save_every_n_epochs} epochs)",
                 )
 
         # Save best model if conditions met

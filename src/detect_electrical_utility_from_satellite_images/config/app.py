@@ -53,7 +53,7 @@ class AppConfig(pydantic_settings.BaseSettings):
     """Training configuration."""
 
     augmentation: AugmentationConfig = pydantic.Field(
-        default_factory=AugmentationConfig
+        default_factory=AugmentationConfig,
     )
     """Data augmentation configuration."""
 

@@ -8,7 +8,7 @@ paths:
   logging_dir_name: "logs/{experiment_name}"
 
 logging:
-  logger_lvl: "info"
+  logger_lvl: "debug"
   console_handler_lvl: "info"
   file_handler_lvl: "debug"
 
@@ -20,7 +20,7 @@ model:
   classes: 6
   learning_rate: 0.001
   batch_size: 4 # Increased for faster training (adjust based on GPU memory)
-  epochs: 5 # Quick but meaningful experiments
+  epochs: 10 # Quick but meaningful experiments
   device: "cuda" # cpu or cuda
 
 # Weights & Biases Configuration
@@ -45,7 +45,7 @@ metrics:
 
 # Training Enhancements
 training:
-  experiment_name: "baseline" # Used for folder naming and W&B grouping
+  experiment_name: "palmerston_only" # Used for folder naming and W&B grouping
   seed: 42 # Random seed for reproducibility
   gradient_accumulation_steps: 1 # Effective batch size = batch_size * steps
   mixed_precision: true # Enable AMP for faster training (requires compatible GPU)

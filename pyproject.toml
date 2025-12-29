@@ -24,7 +24,6 @@ dependencies = [
 [project.scripts]
 main = "detect_electrical_utility_from_satellite_images.main:app"
 train = "detect_electrical_utility_from_satellite_images.main:train_app"
-run-experiments = "dev_scripts.run_experiments:app"
 eval-model = "dev_scripts.evaluate_model:app"
 
 [build-system]

@@ -29,7 +29,7 @@ class WeightedCrossEntropyLoss(nn.Module):
             Scalar loss value
         """
         return F.cross_entropy(
-            input, target, weight=self.weight, reduction=self.reduction
+            input, target, weight=self.weight, reduction=self.reduction,
         )
 
 
@@ -192,7 +192,7 @@ def create_loss_function(
         ce_loss = WeightedCrossEntropyLoss(weight=weight_tensor)
         dice_loss = DiceLoss()
         return CombinedLoss(
-            [ce_loss, dice_loss], weights=[loss_alpha, 1.0 - loss_alpha]
+            [ce_loss, dice_loss], weights=[loss_alpha, 1.0 - loss_alpha],
         )
 
     raise ValueError(f"Unknown loss function: {loss_name}")

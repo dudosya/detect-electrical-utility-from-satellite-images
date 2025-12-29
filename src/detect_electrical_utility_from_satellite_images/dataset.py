@@ -90,13 +90,13 @@ class SatteliteImgsDataset(torch.utils.data.Dataset):
         # if the lists are not the same len, then its false
         if len(img_patch_paths) != len(mask_patch_paths):
             logger.critical(
-                f"Img patch path list and mask patch path list have unequal number of elements. IMG: {len(img_patch_paths)}. MSK: {len(mask_patch_paths)}"
+                f"Img patch path list and mask patch path list have unequal number of elements. IMG: {len(img_patch_paths)}. MSK: {len(mask_patch_paths)}",
             )
             raise ValueError(
-                f"Img patch path list and mask patch path list have unequal number of elements. IMG: {len(img_patch_paths)}. MSK: {len(mask_patch_paths)}"
+                f"Img patch path list and mask patch path list have unequal number of elements. IMG: {len(img_patch_paths)}. MSK: {len(mask_patch_paths)}",
             )
         logger.debug(
-            f"Img patch path list and mask patch path list have equal number of elements. IMG: {len(img_patch_paths)}. MSK: {len(mask_patch_paths)}"
+            f"Img patch path list and mask patch path list have equal number of elements. IMG: {len(img_patch_paths)}. MSK: {len(mask_patch_paths)}",
         )
 
         for img_path, mask_path in zip(img_patch_paths, mask_patch_paths):
@@ -109,36 +109,36 @@ class SatteliteImgsDataset(torch.utils.data.Dataset):
             # if there are more than 3 differences,  then something is wrong
             if len(diff_indexes) != 3:
                 logger.critical(
-                    f"the difference between {img_path.name} and {mask_path.name} is not equal to 3 characters"
+                    f"the difference between {img_path.name} and {mask_path.name} is not equal to 3 characters",
                 )
                 raise ValueError(
-                    f"the difference between {img_path.name} and {mask_path.name} is not equal to 3 characters"
+                    f"the difference between {img_path.name} and {mask_path.name} is not equal to 3 characters",
                 )
 
             # if the difference indexes are not contiguous, then something is wrong
             if diff_indexes[-1] - diff_indexes[0] != 2:
                 logger.critical(
-                    f"the difference indexes are not 3 contiguous indexes between {img_path.name} and {mask_path.name}"
+                    f"the difference indexes are not 3 contiguous indexes between {img_path.name} and {mask_path.name}",
                 )
                 raise ValueError(
-                    f"the difference indexes are not 3 contiguous indexes between {img_path.name} and {mask_path.name}"
+                    f"the difference indexes are not 3 contiguous indexes between {img_path.name} and {mask_path.name}",
                 )
 
             # if the diff indexes do not correspond to img or msk, then something is wrong
             if img_path.name[diff_indexes[0] : diff_indexes[-1] + 1] != "img":
                 logger.critical(
-                    f"the difference is not the string 'img' between {img_path.name} and {mask_path.name}. Difference is: {img_path.name[diff_indexes[0] : diff_indexes[-1] + 1]} "
+                    f"the difference is not the string 'img' between {img_path.name} and {mask_path.name}. Difference is: {img_path.name[diff_indexes[0] : diff_indexes[-1] + 1]} ",
                 )
                 raise ValueError(
-                    f"the difference is not the string 'img' between {img_path.name} and {mask_path.name}. Difference is: {img_path.name[diff_indexes[0] : diff_indexes[-1] + 1]} "
+                    f"the difference is not the string 'img' between {img_path.name} and {mask_path.name}. Difference is: {img_path.name[diff_indexes[0] : diff_indexes[-1] + 1]} ",
                 )
 
             if mask_path.name[diff_indexes[0] : diff_indexes[-1] + 1] != "msk":
                 logger.critical(
-                    f"the difference is not the string 'msk' between {img_path.name} and {mask_path.name}. Difference is: {img_path.name[diff_indexes[0] : diff_indexes[-1] + 1]} "
+                    f"the difference is not the string 'msk' between {img_path.name} and {mask_path.name}. Difference is: {img_path.name[diff_indexes[0] : diff_indexes[-1] + 1]} ",
                 )
                 raise ValueError(
-                    f"the difference is not the string 'msk' between {img_path.name} and {mask_path.name}. Difference is: {img_path.name[diff_indexes[0] : diff_indexes[-1] + 1]} "
+                    f"the difference is not the string 'msk' between {img_path.name} and {mask_path.name}. Difference is: {img_path.name[diff_indexes[0] : diff_indexes[-1] + 1]} ",
                 )
 
 
@@ -168,14 +168,14 @@ def dataset_tester(cfg):
             v2.Lambda(
                 lambda x: x.to(torch.long)
                 if isinstance(x, torchvision.tv_tensors.Mask)
-                else x
+                else x,
             ),
-        ]
+        ],
     )
 
     # init the dataset
     myDataset = SatteliteImgsDataset(
-        img_paths=img_patch_paths, mask_paths=mask_patch_paths, transforms=transforms
+        img_paths=img_patch_paths, mask_paths=mask_patch_paths, transforms=transforms,
     )
 
     # test the dataset len
