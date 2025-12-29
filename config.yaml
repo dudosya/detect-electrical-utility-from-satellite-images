@@ -13,14 +13,14 @@ logging:
   file_handler_lvl: "debug"
 
 model:
-  architecture: "fpn" # unet, deeplabv3, fpn
+  architecture: "unet" # unet, deeplabv3, fpn
   encoder_name: "mobilenet_v2" # resnet18, resnet34, resnet50, efficientnet-b0, mobilenet_v2
   encoder_weights: null # imagenet or null
   in_channels: 3
   classes: 6
   learning_rate: 0.001
-  batch_size: 4 # Increased for faster training (adjust based on GPU memory)
-  epochs: 5 # Quick but meaningful experiments
+  batch_size: 16 # Increased for faster training (adjust based on GPU memory)
+  epochs: 50 # Quick but meaningful experiments
   device: "cuda" # cpu or cuda
 
 # Weights & Biases Configuration
@@ -29,7 +29,7 @@ wandb:
   entity: null # Your W&B username/team (null for default)
   run_name: "experiment_{timestamp}"
   tags: ["unet", "mobilenet_v2", "512_patches", "fast_experiment"]
-  log_model: false # Disable model uploads to W&B (save locally only)
+  log_model: true # Disable model uploads to W&B (save locally only)
   save_code: true # Upload code to W&B
   notes: "Fast experiment with 512x512 patches"
   group: "fast_experiments"
@@ -58,11 +58,11 @@ metrics:
 
 # Training Enhancements
 training:
-  experiment_name: "palmerston_only" # Used for folder naming and W&B grouping
+  experiment_name: "us_tucson" # Used for folder naming and W&B grouping
   seed: 42 # Random seed for reproducibility
-  gradient_accumulation_steps: 1 # Effective batch size = batch_size * steps
+  gradient_accumulation_steps: 2 # Effective batch size = batch_size * steps
   mixed_precision: true # Enable AMP for faster training (requires compatible GPU)
-  early_stopping_patience: 5 # Reduced for faster experimentation
+  early_stopping_patience: 15 # Reduced for faster experimentation
   lr_scheduler: "cosine" # cosine, reduce_on_plateau, step, none
   lr_scheduler_params:
     # Cosine annealing
@@ -70,7 +70,7 @@ training:
     eta_min: 0.000001 # Minimum learning rate (1e-6 as float)
     # Reduce on plateau
     factor: 0.5
-    patience: 3
+    patience: 10
     min_lr: 0.000001 # 1e-6 as float
     # Step scheduler
     step_size: 5
@@ -103,3 +103,5 @@ checkpoints:
   save_last: true
   metric_to_monitor: "val_loss" # Monitor validation loss for simplicity
   mode: "min" # Minimize validation loss
+  save_every_n_epochs: 10
+  min_delta: 0.001
