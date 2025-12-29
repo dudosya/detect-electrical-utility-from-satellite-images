@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader
 
 import wandb
 
@@ -20,6 +20,7 @@ from .dataset import SatteliteImgsDataset
 from .losses import calculate_class_weights, create_loss_function
 from .metrics import calculate_all_metrics, visualize_predictions
 from .model import count_parameters, create_model, save_checkpoint
+from .utils import split_by_image, validate_split_by_image
 
 logger = logging.getLogger(__name__)
 
@@ -284,44 +285,10 @@ def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
     logger.info(f"Model has {count_parameters(model):,} trainable parameters")
 
     # Setup loss and optimizer
-    # Calculate class weights if auto_class_weights is enabled
+    # Class weights will be calculated after dataset split (if auto_class_weights is enabled)
     class_weights = None
-    if cfg.training.auto_class_weights and not use_mock_data:
-        try:
-            # Load real dataset for weight calculation
-            img_patch_paths = sorted(
-                (cfg.paths.output_dir / "img_patches").glob("*.png"),
-            )
-            mask_patch_paths = sorted(
-                (cfg.paths.output_dir / "mask_patches").glob("*.png"),
-            )
-
-            if len(img_patch_paths) > 0:
-                from torchvision.transforms import v2
-
-                transforms = v2.Compose(
-                    [
-                        v2.ToDtype(dtype=torch.float32, scale=True),
-                    ],
-                )
-
-                dataset = SatteliteImgsDataset(
-                    img_paths=img_patch_paths,
-                    mask_paths=mask_patch_paths,
-                    transforms=transforms,
-                )
-
-                class_weights = calculate_class_weights(
-                    dataset, cfg.model.classes, device,
-                )
-                logger.info(f"Auto-calculated class weights: {class_weights.tolist()}")
-            else:
-                logger.warning("No real data found for auto class weight calculation")
-        except Exception as e:
-            logger.warning(f"Failed to auto-calculate class weights: {e}")
-
     # Use manual class weights if provided
-    elif cfg.training.class_weights is not None:
+    if cfg.training.class_weights is not None:
         class_weights = torch.tensor(cfg.training.class_weights, device=device)
         logger.info(f"Using manual class weights: {class_weights.tolist()}")
 
@@ -429,10 +396,27 @@ def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
             f"Found {len(img_patch_paths)} image patches and {len(mask_patch_paths)} mask patches",
         )
 
+        # Split patches by original image to prevent data leakage
+        train_img_paths, train_mask_paths, val_img_paths, val_mask_paths = split_by_image(
+            img_patch_paths,
+            mask_patch_paths,
+            train_ratio=0.8,
+            seed=cfg.training.seed,
+        )
+
+        # Validate the split
+        if not validate_split_by_image(train_img_paths, val_img_paths):
+            logger.warning("Data leakage detected in split! Proceeding anyway...")
+
+        logger.info(
+            f"Split patches: {len(train_img_paths)} train, {len(val_img_paths)} validation"
+        )
+
         # Define transforms (same as in dataset.py)
         from torchvision.transforms import v2
 
-        transforms = v2.Compose(
+        # Training transforms with augmentation
+        train_transforms = v2.Compose(
             [
                 v2.RandomHorizontalFlip(),
                 v2.RandomVerticalFlip(),
@@ -447,19 +431,61 @@ def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
             ],
         )
 
-        # Create dataset
-        from .dataset import SatteliteImgsDataset
-
-        dataset = SatteliteImgsDataset(
-            img_paths=img_patch_paths,
-            mask_paths=mask_patch_paths,
-            transforms=transforms,
+        # Validation transforms (no augmentation)
+        val_transforms = v2.Compose(
+            [
+                v2.ToDtype(dtype=torch.float32, scale=True),
+                v2.Lambda(
+                    lambda x: x.to(torch.long)
+                    if hasattr(x, "__class__") and x.__class__.__name__ == "Mask"
+                    else x,
+                ),
+            ],
         )
 
-        # Split dataset
-        train_size = int(0.8 * len(dataset))
-        val_size = len(dataset) - train_size
-        train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+        # Create datasets
+        train_dataset = SatteliteImgsDataset(
+            img_paths=train_img_paths,
+            mask_paths=train_mask_paths,
+            transforms=train_transforms,
+        )
+        val_dataset = SatteliteImgsDataset(
+            img_paths=val_img_paths,
+            mask_paths=val_mask_paths,
+            transforms=val_transforms,
+        )
+
+        # Calculate class weights from training data if auto_class_weights is enabled
+        if cfg.training.auto_class_weights and class_weights is None:
+            try:
+                # Create a simple dataset without augmentation for weight calculation
+                from torchvision.transforms import v2
+                weight_transforms = v2.Compose([
+                    v2.ToDtype(dtype=torch.float32, scale=True),
+                ])
+                weight_dataset = SatteliteImgsDataset(
+                    img_paths=train_img_paths,
+                    mask_paths=train_mask_paths,
+                    transforms=weight_transforms,
+                )
+                calculated_weights = calculate_class_weights(
+                    weight_dataset, cfg.model.classes, device,
+                )
+                class_weights = calculated_weights
+                logger.info(f"Auto-calculated class weights from training data: {class_weights.tolist()}")
+                
+                # Recreate loss function with new class weights
+                criterion = create_loss_function(
+                    loss_name=cfg.training.loss_function,
+                    num_classes=cfg.model.classes,
+                    device=device,
+                    class_weights=class_weights.tolist() if class_weights is not None else None,
+                    loss_alpha=cfg.training.loss_alpha,
+                    loss_gamma=cfg.training.loss_gamma,
+                )
+                logger.info(f"Recreated loss function with auto-calculated class weights")
+            except Exception as e:
+                logger.warning(f"Failed to auto-calculate class weights: {e}")
 
         # Create dataloaders
         train_loader = DataLoader(

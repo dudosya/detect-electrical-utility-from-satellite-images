@@ -208,7 +208,8 @@ def dataset_tester(cfg):
 
     # test: ndim check
     assert output_tuple[0].ndim == 3, "the img tensor must have ndim of 3"
-    assert output_tuple[1].ndim == 3, "the msk tensor must have ndim of 3"
+    # Masks can be 2D (H, W) or 3D (1, H, W) - both are valid
+    assert output_tuple[1].ndim in [2, 3], f"the msk tensor must have ndim of 2 or 3, got {output_tuple[1].ndim}"
 
     # print: shape
     print(f"SHAPE IMG: {output_tuple[0].shape}")
@@ -227,10 +228,21 @@ def dataset_tester(cfg):
     img_arr = np.array(img_tensor, dtype=np.float32)
     msk_arr = np.array(msk_tensor, dtype=np.long)
 
-    # the shapes of arrs are (C,H,W). we need (H,W,C)
-    img_arr = np.permute_dims(img_arr, axes=(1, 2, 0))
-    msk_arr = np.permute_dims(msk_arr, axes=(1, 2, 0))
-
+    # Handle different mask dimensions
+    # Image is always 3D (C, H, W) -> convert to (H, W, C)
+    if img_arr.ndim == 3:
+        img_arr = np.transpose(img_arr, (1, 2, 0))
+    
+    # Mask can be 2D (H, W) or 3D (1, H, W)
+    if msk_arr.ndim == 3:
+        # If 3D, squeeze channel dimension if it's 1
+        if msk_arr.shape[0] == 1:
+            msk_arr = msk_arr.squeeze(0)
+        else:
+            # If multiple channels, take first channel for display
+            msk_arr = msk_arr[0]
+    # If 2D, keep as is
+    
     # # the img stays the same i guess???
     plt.imshow(img_arr)
     plt.imshow(msk_arr, alpha=0.5)

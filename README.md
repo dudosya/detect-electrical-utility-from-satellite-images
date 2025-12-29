@@ -47,7 +47,11 @@ detect-electrical-utility-from-satellite-images/
 │   ├── preprocess.py            # Image preprocessing
 │   ├── losses.py                # Loss functions
 │   ├── metrics.py               # Evaluation metrics
-│   └── main.py                  # CLI entry point
+│   ├── main.py                  # CLI entry point
+│   └── utils/                   # Utility functions
+│       ├── file_utils.py        # File operations
+│       ├── logging_config.py    # Logging setup
+│       └── split_utils.py       # Image-level data splitting
 ├── tests/                       # Test suite
 ├── config.yaml                  # Main configuration
 ├── config_experiment_template.yaml  # Experiment template
@@ -179,7 +183,8 @@ Supported backbones:
 - **Gradient Accumulation**: Train with larger effective batch sizes
 - **Learning Rate Schedulers**: Cosine, ReduceLROnPlateau, Step
 - **Early Stopping**: Prevent overfitting
-- **Class Weighting**: Handle imbalanced datasets
+- **Class Weighting**: Handle imbalanced datasets (calculated from training data only)
+- **Data Leakage Prevention**: Image-level train/val split ensures patches from same image don't appear in both sets
 - **W&B Integration**: Experiment tracking and visualization
 
 ## Evaluation Metrics
