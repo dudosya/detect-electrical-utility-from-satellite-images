@@ -1,6 +1,9 @@
 preprocessing:
   patch_size: 512 # Reduced from 1024 for faster experimentation
-  background_fraction: 0.1 # fraction of background patches to save
+  background_fraction: 0.05 # fraction of background patches to save
+  classes_to_background: [1] # Remap LINE (class 1) to background - set to null to keep all classes
+  target_gsd_cm: 15.0 # Target GSD in cm/pixel for scale normalization (null to disable)
+  gsd_tolerance: 0.05 # 5% tolerance - images within this range skip resampling
 
 paths:
   output_dir: "output_imgs/patches_{patch_size}_{experiment_name}"
@@ -17,7 +20,7 @@ model:
   encoder_name: "mobilenet_v2" # resnet18, resnet34, resnet50, efficientnet-b0, mobilenet_v2
   encoder_weights: null # imagenet or null
   in_channels: 3
-  classes: 6
+  classes: 5 # Reduced from 6 since LINE is now treated as background
   learning_rate: 0.001
   batch_size: 16 # Increased for faster training (adjust based on GPU memory)
   epochs: 50 # Quick but meaningful experiments
@@ -58,7 +61,7 @@ metrics:
 
 # Training Enhancements
 training:
-  experiment_name: "us_tucson" # Used for folder naming and W&B grouping
+  experiment_name: "combined_set" # Used for folder naming and W&B grouping
   seed: 42 # Random seed for reproducibility
   gradient_accumulation_steps: 2 # Effective batch size = batch_size * steps
   mixed_precision: true # Enable AMP for faster training (requires compatible GPU)
@@ -83,7 +86,13 @@ training:
     # SGD parameters
     momentum: 0.9
     nesterov: true
-  class_weights: null # null for equal weights, or list of weights per class
+
+  # === CLASS IMBALANCE SETTINGS ===
+  loss_function: "combined" # cross_entropy, dice, focal, combined (recommended: focal or combined)
+  auto_class_weights: true # Automatically calculate class weights from training data
+  class_weights: null # Manual weights (ignored if auto_class_weights is true)
+  loss_alpha: 0.5 # For combined loss: weight of CE (0.5 = equal CE + Dice)
+  loss_gamma: 2.0 # Focal loss gamma: higher = more focus on hard examples (2.0 is standard)
 
 # Data Augmentation Configuration (simplified for speed)
 augmentation:

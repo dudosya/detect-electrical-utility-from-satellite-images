@@ -15,3 +15,13 @@ class PreprocessConfig(pydantic.BaseModel):
 
     background_fraction: typing.Annotated[float, pydantic.Field(le=1.0, ge=0.00001)]
     """Fraction of background pixels to include (between 0.00001 and 1.0)."""
+
+    classes_to_background: list[int] | None = None
+    """List of class indices to remap to background (0). E.g., [1] to treat LINE as background."""
+
+    target_gsd_cm: typing.Annotated[float, pydantic.Field(gt=0)] | None = None
+    """Target Ground Sample Distance in cm/pixel. Images will be resampled to match this.
+    If None, no resampling is performed. Recommended: 15.0 for this dataset."""
+
+    gsd_tolerance: typing.Annotated[float, pydantic.Field(gt=0, le=0.5)] = 0.05
+    """Tolerance for GSD matching (0.05 = 5%). Images within tolerance skip resampling."""
