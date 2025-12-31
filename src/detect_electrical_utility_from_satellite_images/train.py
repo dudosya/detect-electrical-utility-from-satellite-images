@@ -163,6 +163,13 @@ def train_epoch(
     avg_loss = total_loss / max(num_batches, 1)
     logger.info(f"Epoch {epoch} training complete: avg loss = {avg_loss:.4f}")
 
+    # Log per-class IoU to console for easy monitoring
+    if "iou_per_class" in metrics:
+        iou_strs = [f"c{k}={v:.3f}" for k, v in metrics["iou_per_class"].items()]
+        logger.info(f"  Train IoU per class: {', '.join(iou_strs)}")
+    if "iou" in metrics:
+        logger.info(f"  Train mIoU: {metrics['iou']:.4f}")
+
     # Log to W&B
     log_data = {"train/loss": avg_loss}
     for metric_name, metric_value in metrics.items():
@@ -239,6 +246,14 @@ def validate(
 
     avg_loss = total_loss / max(num_batches, 1)
     logger.info(f"Validation complete: avg loss = {avg_loss:.4f}")
+
+    # Log per-class IoU to console for easy monitoring
+    if "iou_per_class" in metrics:
+        iou_strs = [f"c{k}={v:.3f}" for k, v in metrics["iou_per_class"].items()]
+        logger.info(f"  Val IoU per class: {', '.join(iou_strs)}")
+    if "iou" in metrics:
+        logger.info(f"  Val mIoU: {metrics['iou']:.4f}")
+
     return avg_loss, metrics
 
 

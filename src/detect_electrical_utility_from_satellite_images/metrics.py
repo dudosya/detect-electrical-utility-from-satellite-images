@@ -564,11 +564,20 @@ def calculate_all_metrics(
     results = {}
 
     if "iou" in metrics_config.get("track", []):
+        # Calculate averaged IoU (macro/micro/weighted)
         results["iou"] = calculate_iou(
             predictions,
             targets,
             num_classes,
             average=metrics_config.get("iou_average", "macro"),
+            ignore_index=ignore_index,
+        )
+        # Always calculate per-class IoU for detailed analysis
+        results["iou_per_class"] = calculate_iou(
+            predictions,
+            targets,
+            num_classes,
+            average="none",
             ignore_index=ignore_index,
         )
 
@@ -578,6 +587,14 @@ def calculate_all_metrics(
             targets,
             num_classes,
             average=metrics_config.get("dice_average", "macro"),
+            ignore_index=ignore_index,
+        )
+        # Always calculate per-class Dice for detailed analysis
+        results["dice_per_class"] = calculate_dice(
+            predictions,
+            targets,
+            num_classes,
+            average="none",
             ignore_index=ignore_index,
         )
 
