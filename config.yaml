@@ -1,7 +1,7 @@
 preprocessing:
   patch_size: 512 # Reduced from 1024 for faster experimentation
   background_fraction: 0.05 # fraction of background patches to save
-  classes_to_background: [1] # Remap LINE (class 1) to background - set to null to keep all classes
+  classes_to_background: [3] # Remap LINE (class 1) to background - set to null to keep all classes
   target_gsd_cm: 15.0 # Target GSD in cm/pixel for scale normalization (null to disable)
   gsd_tolerance: 0.05 # 5% tolerance - images within this range skip resampling
 
@@ -61,7 +61,7 @@ metrics:
 
 # Training Enhancements
 training:
-  experiment_name: "baseline_resnet34" # Used for folder naming and W&B grouping
+  experiment_name: "baseline_resnet34_fixed" # Used for folder naming and W&B grouping
   seed: 42 # Random seed for reproducibility
   gradient_accumulation_steps: 4 # Effective batch size = 8 * 4 = 32
   mixed_precision: true # Enable AMP for faster training (requires compatible GPU)

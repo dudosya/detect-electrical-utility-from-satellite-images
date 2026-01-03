@@ -5,6 +5,7 @@ output_imgs/
 data/
 .github/
 wandb/
+Documentation.pdf
 
 .clinerules/
 evaluation_results/
