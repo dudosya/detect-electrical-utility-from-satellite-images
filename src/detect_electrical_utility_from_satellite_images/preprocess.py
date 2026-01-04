@@ -103,16 +103,21 @@ def resample_to_target_gsd(
 def remap_classes(
     mask_arr: np.ndarray,
     classes_to_background: list[int] | None = None,
-) -> np.ndarray:
+    fixed_class_order: list[int] | None = None,
+) -> tuple[np.ndarray, dict[int, int] | None]:
     """Remap specified classes to background (0) and renumber remaining classes.
 
     Args:
         mask_arr: The mask array with original class indices.
         classes_to_background: List of class indices to treat as background.
             If None or empty, returns original mask unchanged.
+        fixed_class_order: Optional ordered list of source class ids to keep (excluding
+            background). When provided, mapping follows this order regardless of which
+            classes are present in a particular mask, ensuring stable indices across files.
 
     Returns:
-        Remapped mask array with contiguous class indices starting from 0.
+        Tuple of (remapped mask array, mapping dict or None). Mapping uses contiguous
+        class indices starting from 1 for non-background classes.
 
     Example:
         If original classes are [0, 1, 2, 3, 4, 5] and classes_to_background=[1]:
@@ -120,13 +125,18 @@ def remap_classes(
         - Classes 2,3,4,5 become 1,2,3,4 respectively
         Result: [0, 1, 2, 3, 4] (5 classes instead of 6)
     """
-    if not classes_to_background:
-        return mask_arr
+    classes_to_background_set = set(classes_to_background or [])
+
+    if fixed_class_order:
+        original_classes = [cls for cls in fixed_class_order if cls not in classes_to_background_set and cls != 0]
+        if not original_classes:
+            return np.zeros_like(mask_arr), {}
+    else:
+        original_classes = sorted(set(np.unique(mask_arr)) - classes_to_background_set - {0})
+        if not original_classes:
+            return mask_arr, None
 
     remapped = np.zeros_like(mask_arr)
-
-    # Get all unique classes except those going to background
-    original_classes = sorted(set(np.unique(mask_arr)) - set(classes_to_background) - {0})
 
     # Create mapping: old_class -> new_class (contiguous from 1)
     class_mapping = {old_cls: new_idx for new_idx, old_cls in enumerate(original_classes, start=1)}
@@ -135,12 +145,7 @@ def remap_classes(
     for old_cls, new_cls in class_mapping.items():
         remapped[mask_arr == old_cls] = new_cls
 
-    logger.debug(
-        f"Remapped classes {classes_to_background} to background. "
-        f"Original unique: {np.unique(mask_arr)}, New unique: {np.unique(remapped)}, "
-        f"Mapping: {class_mapping}",
-    )
-    return remapped
+    return remapped, class_mapping
 
 
 def create_patches(
@@ -151,6 +156,7 @@ def create_patches(
     original_name: str,
     background_fraction: float,
     classes_to_background: list[int] | None = None,
+    fixed_class_order: list[int] | None = None,
 ) -> None:
     """Generate and save patches from a large image and its corresponding mask.
 
@@ -188,7 +194,7 @@ def create_patches(
         logger.info(f"Classes remapped to background: {classes_to_background}")
 
     # Remap specified classes to background before processing
-    mask_arr = remap_classes(mask_arr, classes_to_background)
+    mask_arr, class_mapping = remap_classes(mask_arr, classes_to_background, fixed_class_order)
 
     # Calculate how many complete patches fit (no padding)
     n_patches_h = image_arr.shape[0] // patch_size
@@ -239,6 +245,52 @@ def create_patches(
                 # logger
                 logger.debug(f"Discarded {img_fp}")
                 logger.debug(f"Discarded {mask_fp}")
+
+    # Log remapping summary at the end so it appears once per run
+    if classes_to_background:
+        logger.info(
+            "Class remap summary | to_background=%s | mapping=%s | remapped_uniques=%s",
+            classes_to_background,
+            class_mapping,
+            np.unique(mask_arr),
+        )
+
+
+def summarize_mask_classes(mask_dir: Path, num_classes: int) -> None:
+    """Log pixel counts per class and detect out-of-range labels in mask patches."""
+
+    if num_classes <= 0:
+        logger.warning("Invalid num_classes %s; skipping class summary", num_classes)
+        return
+
+    mask_paths = sorted(mask_dir.glob("*.png"))
+    if not mask_paths:
+        logger.warning("No mask patches found in %s; skipping class summary", mask_dir)
+        return
+
+    counts = np.zeros(num_classes, dtype=np.int64)
+    out_of_range: set[int] = set()
+
+    for mask_path in mask_paths:
+        mask_arr = np.array(Image.open(mask_path))
+        uniques, freqs = np.unique(mask_arr, return_counts=True)
+        for cls_val, freq in zip(uniques, freqs):
+            cls_int = int(cls_val)
+            if 0 <= cls_int < num_classes:
+                counts[cls_int] += int(freq)
+            else:
+                out_of_range.add(cls_int)
+
+    logger.info(
+        "Mask class distribution | dir=%s | counts=%s | total_pixels=%d | out_of_range=%s",
+        mask_dir,
+        counts.tolist(),
+        int(counts.sum()),
+        sorted(out_of_range) if out_of_range else None,
+    )
+
+    if out_of_range:
+        logger.error("Found out-of-range labels %s in %s", sorted(out_of_range), mask_dir)
 
 
 def pad_to_patch_size(img_arr: np.ndarray, patch_size: int) -> np.ndarray:
@@ -349,7 +401,20 @@ def jpg_paths_to_patches(cfg):
             filename,
             cfg.preprocessing.background_fraction,
             cfg.preprocessing.classes_to_background,
+            cfg.preprocessing.fixed_class_order,
         )
+
+    mask_dir = Path(cfg.paths.output_dir) / "mask_patches"
+    if mask_dir.exists():
+        summarize_mask_classes(mask_dir, cfg.model.classes)
+    else:
+        logger.warning("Mask directory %s not found; skipping class summary", mask_dir)
+
+    mask_dir = Path(cfg.paths.output_dir) / "mask_patches"
+    if mask_dir.exists():
+        summarize_mask_classes(mask_dir, cfg.model.classes)
+    else:
+        logger.warning("Mask directory %s not found; skipping class summary", mask_dir)
 
 
 if __name__ == "__main__":
@@ -446,4 +511,5 @@ if __name__ == "__main__":
             filename,
             cfg.preprocessing.background_fraction,
             cfg.preprocessing.classes_to_background,
+            cfg.preprocessing.fixed_class_order,
         )

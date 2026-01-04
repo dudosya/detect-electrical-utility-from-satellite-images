@@ -19,6 +19,10 @@ class PreprocessConfig(pydantic.BaseModel):
     classes_to_background: list[int] | None = None
     """List of class indices to remap to background (0). E.g., [1] to treat LINE as background."""
 
+    fixed_class_order: list[int] | None = None
+    """Optional ordered list of source class ids to keep (excluding background). When set,
+    remapping uses this order for consistent class indices across all masks."""
+
     target_gsd_cm: typing.Annotated[float, pydantic.Field(gt=0)] | None = None
     """Target Ground Sample Distance in cm/pixel. Images will be resampled to match this.
     If None, no resampling is performed. Recommended: 15.0 for this dataset."""
