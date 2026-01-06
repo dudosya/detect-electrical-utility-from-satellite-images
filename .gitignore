@@ -2,14 +2,15 @@
 output_imgs/
 
 # data
-data/
-
-# reposcribe
-reposcribe.md
+raw_data/
+preprocessed_data/
+.github
 
 #logs
 utils/logs
 logs/
+checkpoints/
+wandb/
 
 
 # Byte-compiled / optimized / DLL files
