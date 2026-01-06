@@ -9,7 +9,7 @@ import pytorch_lightning as pl
 import torch
 from torch.optim import SGD
 from torch.optim.lr_scheduler import StepLR
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import ConcatDataset, DataLoader, random_split
 from torchmetrics.detection import MeanAveragePrecision
 
 from detect_electrical_utility_from_satellite_images.config import Config
@@ -117,16 +117,16 @@ class TowerDetectorModule(pl.LightningModule):
         # Sum all losses
         total_loss = sum(loss for loss in loss_dict.values())
 
-        # Log individual losses
+        # Log individual losses (on_step=False so x-axis is epochs)
         for name, loss in loss_dict.items():
-            self.log(f"train/{name}", loss, on_step=True, on_epoch=True, prog_bar=False, batch_size=batch_size)
+            self.log(f"train/{name}", loss, on_step=False, on_epoch=True, prog_bar=False, batch_size=batch_size)
 
-        self.log("train/loss", total_loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=batch_size)
+        self.log("train/loss", total_loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=batch_size)
         
         # Log learning rate
         opt = self.optimizers()
         if hasattr(opt, 'param_groups'):
-            self.log("train/lr", opt.param_groups[0]["lr"], on_step=True, prog_bar=True)
+            self.log("train/lr", opt.param_groups[0]["lr"], on_step=False, on_epoch=True, prog_bar=True)
 
         return total_loss
 
@@ -265,7 +265,7 @@ class TowerDetectionDataModule(pl.LightningDataModule):
     def __init__(
         self,
         config: Config,
-        patches_dir: Path | str,
+        patches_dirs: list[Path] | Path | str,
         val_split: float = 0.1,
         num_workers: int = 4,
     ) -> None:
@@ -273,19 +273,23 @@ class TowerDetectionDataModule(pl.LightningDataModule):
 
         Args:
             config: Configuration instance.
-            patches_dir: Directory containing preprocessed patches.
+            patches_dirs: Directory or list of directories containing preprocessed patches.
             val_split: Fraction of data to use for validation.
             num_workers: Number of data loading workers.
         """
         super().__init__()
         self.config = config
-        self.patches_dir = Path(patches_dir)
+        # Normalize to list of Paths
+        if isinstance(patches_dirs, (str, Path)):
+            self.patches_dirs = [Path(patches_dirs)]
+        else:
+            self.patches_dirs = [Path(d) for d in patches_dirs]
         self.val_split = val_split
         self.num_workers = num_workers
         self.batch_size = config.training.batch_size
 
-        self.train_dataset: TowerDetectionDataset | None = None
-        self.val_dataset: TowerDetectionDataset | None = None
+        self.train_dataset: ConcatDataset[Any] | TowerDetectionDataset | None = None
+        self.val_dataset: ConcatDataset[Any] | TowerDetectionDataset | None = None
 
     def setup(self, stage: str | None = None) -> None:
         """Set up datasets.
@@ -294,11 +298,20 @@ class TowerDetectionDataModule(pl.LightningDataModule):
             stage: Either 'fit', 'validate', 'test', or 'predict'.
         """
         if stage in ("fit", "validate") or stage is None:
-            # Create full dataset
-            full_dataset = TowerDetectionDataset(
-                patches_dir=self.patches_dir,
-                include_background=False,  # Only patches with towers
-            )
+            # Create datasets for all regions and combine
+            datasets = []
+            for patches_dir in self.patches_dirs:
+                ds = TowerDetectionDataset(
+                    patches_dir=patches_dir,
+                    include_background=False,  # Only patches with towers
+                )
+                datasets.append(ds)
+
+            # Combine all region datasets
+            if len(datasets) == 1:
+                full_dataset = datasets[0]
+            else:
+                full_dataset = ConcatDataset(datasets)
 
             # Split into train/val
             total_size = len(full_dataset)
@@ -313,6 +326,7 @@ class TowerDetectionDataModule(pl.LightningDataModule):
 
             get_logger().info(
                 "data_split",
+                num_regions=len(self.patches_dirs),
                 train_size=train_size,
                 val_size=val_size,
             )

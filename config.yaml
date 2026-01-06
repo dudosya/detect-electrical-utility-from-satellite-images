@@ -35,7 +35,7 @@ graph_inference:
 training:
   iterations: 5000
   max_epochs: 10
-  batch_size: 5
+  batch_size: 2
   initial_lr: 0.003
   lr_decay_factor: 0.1
   lr_decay_steps: 10000
@@ -49,6 +49,6 @@ wandb:
   enabled: true
   project: "gridtracer"
   entity: null # set to your W&B username or team
-  tags: ["tower-detection"]
+  tags: ["line-segmentation"] # tower-detection, line-segmentation
   notes: ""
   offline: false

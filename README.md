@@ -1,40 +1,245 @@
-# detect-electrical-utility-from-satellite-images
+# GridTracer
 
-RA project to detect electrical utility from satellite imagery.
+A three-stage machine learning pipeline for detecting electrical utility infrastructure (towers, power lines, substations) from satellite imagery. Implementation based on the GridTracer paper architecture.
 
-## Prerequisites
+## Overview
 
-- [uv](https://docs.astral.sh/uv/) installed.
-- NVIDIA Drivers supporting **CUDA 12.6**.
+GridTracer converts raw satellite imagery into a geospatial graph representing the power grid:
 
-## Setup
+1. **Stage 1 - Tower Detection**: Faster R-CNN with ResNet50-FPN backbone detects transmission towers
+2. **Stage 2 - Line Segmentation**: U-Net semantic segmentation produces power line probability maps
+3. **Stage 3 - Graph Inference**: Connects detected towers using segmentation scores and distance constraints
+
+## Requirements
+
+- Python 3.13+
+- NVIDIA GPU with CUDA 12.6 support
+- [uv](https://docs.astral.sh/uv/) package manager
+
+## Installation
 
 ```bash
+git clone <repository-url>
+cd detect-electrical-utility-from-satellite-images
 uv sync
 ```
 
-_This installs Python 3.13, CUDA-enabled PyTorch, and all dependencies into a local `.venv`._
+This creates a virtual environment with all dependencies including CUDA-enabled PyTorch.
+
+Verify GPU availability:
+
+```bash
+uv run python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+## Project Structure
+
+```
+.
+├── config.yaml                 # All configurable parameters
+├── raw_data/                   # Raw satellite imagery and annotations
+│   └── {Region}/               # e.g., NZ_Dunedin/
+│       ├── *.jpg               # Satellite image tiles
+│       ├── *.csv               # Vertex annotations
+│       ├── *.geojson           # Geo-coordinates
+│       └── *_multiclass.png    # Segmentation masks
+├── preprocessed_data/          # Generated training patches
+├── checkpoints/                # Saved model weights
+├── inference_results/          # Inference outputs
+└── src/                        # Source code
+```
+
+## Configuration
+
+All parameters are centralized in `config.yaml`:
+
+```yaml
+preprocessing:
+  patch_size: 500 # Patch dimensions in pixels
+
+tower_detection:
+  confidence_threshold: 0.5 # Minimum detection confidence
+  nms_threshold: 0.5 # Non-maximum suppression threshold
+
+line_segmentation:
+  line_width_train: 30 # Line width for training masks
+  line_width_inference: 9 # Line width for graph inference
+
+graph_inference:
+  max_distance_m: 600.0 # Maximum connection distance (meters)
+  connectivity_threshold: 0.2 # Minimum score for edge creation
+
+training:
+  max_epochs: 50
+  batch_size: 5
+  initial_lr: 0.003
+```
 
 ## Usage
 
-**Run the main application:**
+### 1. Preprocessing
+
+Convert raw imagery into 500x500 pixel training patches:
 
 ```bash
-uv run main
+# Preprocess a specific region
+uv run main preprocess NZ_Dunedin
+
+# Preprocess all available regions
+uv run main preprocess --all
 ```
 
-**Verify GPU acceleration:**
+### 2. Training
+
+Train the tower detection and line segmentation models:
 
 ```bash
-uv run python -c "import torch; print(f'CUDA: {torch.cuda.is_available()} ({torch.cuda.get_device_name(0)})')"
+# Train tower detector (Stage 1)
+uv run main train tower
+
+# Train line segmentor (Stage 2)
+uv run main train line
+
+# Train both stages sequentially
+uv run main train all
+
+# Training options
+uv run main train tower --epochs 100        # Override epochs
+uv run main train tower --region NZ_Dunedin # Specific region
+uv run main train tower --no-wandb          # Disable W&B logging
+uv run main train tower --fast              # Quick test run
+```
+
+Training logs metrics to Weights & Biases by default. Disable with `--no-wandb` or set `wandb.enabled: false` in config.
+
+### 3. Evaluation
+
+Evaluate trained models on validation data:
+
+```bash
+# Evaluate tower detection
+uv run main evaluate tower
+
+# Evaluate line segmentation
+uv run main evaluate line
+
+# List available checkpoints
+uv run main evaluate tower --list
+
+# Use specific checkpoint
+uv run main evaluate tower --prev 1         # Second most recent
+uv run main evaluate tower -c path/to/ckpt  # Explicit path
+
+# Save without display
+uv run main evaluate tower --no-show
+```
+
+Evaluation outputs:
+
+- Metrics: mAP, IoU, Precision, Recall, F1
+- Visualization saved next to checkpoint
+
+### 4. Inference
+
+Run the complete 3-stage pipeline on a satellite image:
+
+```bash
+# Basic inference (auto-selects latest checkpoints)
+uv run main infer path/to/image.jpg
+
+# Specify checkpoints explicitly
+uv run main infer image.jpg -t tower.ckpt -l line.ckpt
+
+# Options
+uv run main infer image.jpg --no-show       # No interactive display
+uv run main infer image.jpg -o results/     # Custom output directory
+```
+
+Inference outputs (saved to `inference_results/`):
+
+- `pipeline_summary.png`: 4-panel visualization of each stage
+- `graph_overlay.png`: Final graph overlaid on image
+- `graph.json`: Machine-readable graph data
+
+### 5. System Information
+
+```bash
+uv run main info
+```
+
+Displays current configuration and GPU status.
+
+## Output Format
+
+The graph inference produces a JSON file with the following structure:
+
+```json
+{
+  "nodes": [[x1, y1], [x2, y2], ...],
+  "adjacency": [[0, 1, 0], [1, 0, 1], ...],
+  "node_scores": [0.95, 0.87, ...],
+  "edge_scores": [[0.0, 0.45, 0.0], ...],
+  "num_nodes": 3,
+  "num_edges": 2,
+  "resolution_m_per_px": 0.3
+}
+```
+
+- `nodes`: Tower centroid coordinates in pixels
+- `adjacency`: Binary adjacency matrix
+- `node_scores`: Detection confidence per tower
+- `edge_scores`: Connectivity score per tower pair
+
+## CLI Reference
+
+```
+uv run main [COMMAND] [OPTIONS]
+
+Commands:
+  preprocess   Preprocess raw imagery into training patches
+  train        Train tower detection or line segmentation models
+  evaluate     Evaluate trained models on validation data
+  infer        Run full 3-stage inference on an image
+  info         Display configuration and system information
+
+Global Options:
+  --config, -c PATH    Path to configuration file (default: config.yaml)
+  --help               Show help message
 ```
 
 ## Development
 
-- **Source Code**: All code is in `src/detect_electrical_utility_from_satellite_images/`
-- **Add Dependencies**: `uv add <package_name>` (e.g., `uv add pandas`)
-- **Sync Changes**: `uv sync` updates the lockfile and environment.
+```bash
+# Run tests
+uv run pytest
 
----
+# Run tests with coverage
+uv run pytest --cov
 
-**Author:** dudosya ([kenaykay@gmail.com](mailto:kenaykay@gmail.com))
+# Lint code
+uv run ruff check src/
+
+# Format code
+uv run ruff format src/
+
+# Type checking
+uv run mypy src/
+```
+
+## Dataset
+
+This implementation uses the Electric Transmission Infrastructure Satellite Imagery Dataset:
+
+- Resolution: 0.3 meters per pixel
+- Coverage: 264 km² across 7 cities (USA and New Zealand)
+- Labels: Towers, Lines, Edge Nodes, Substations
+
+See [here](https://figshare.com/articles/dataset/Electric_Transmission_Infrastructure_Satellite_Imagery_Dataset_for_Computer_Vision/14935434) for details.
+
+## Architecture Details
+
+See [https://arxiv.org/abs/2101.06390](https://arxiv.org/abs/2101.06390) for the complete architecture specification from the GridTracer paper.
+
+## License
+
+See [LICENSE](LICENSE) file.
