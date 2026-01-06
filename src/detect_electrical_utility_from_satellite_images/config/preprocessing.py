@@ -29,3 +29,13 @@ class PreprocessConfig(pydantic.BaseModel):
 
     gsd_tolerance: typing.Annotated[float, pydantic.Field(gt=0, le=0.5)] = 0.05
     """Tolerance for GSD matching (0.05 = 5%). Images within tolerance skip resampling."""
+
+    apply_clahe: bool = False
+    """Whether to apply CLAHE (Contrast Limited Adaptive Histogram Equalization) for contrast enhancement.
+    Recommended for images with thin structures like power lines. Requires opencv-python."""
+
+    clahe_clip_limit: typing.Annotated[float, pydantic.Field(gt=0, le=10)] = 2.0
+    """CLAHE contrast limiting threshold. Higher values = more contrast. Typical range: 2.0-4.0."""
+
+    clahe_tile_grid_size: tuple[int, int] = (8, 8)
+    """CLAHE tile grid size for local histogram equalization. Smaller = more local adaptation."""

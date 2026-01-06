@@ -6,6 +6,13 @@ preprocessing:
   target_gsd_cm: 15.0 # Target GSD in cm/pixel for scale normalization (null to disable)
   gsd_tolerance: 0.05 # 5% tolerance - images within this range skip resampling
 
+  # CLAHE (Contrast Limited Adaptive Histogram Equalization)
+  # Enhances local contrast - RECOMMENDED for detecting thin structures like power lines
+  # Applied OFFLINE during preprocessing (slower preprocessing, faster training)
+  apply_clahe: true # Set to true to enable CLAHE enhancement (requires opencv-python)
+  clahe_clip_limit: 3.0 # Contrast limiting (2.0-4.0 typical). Higher = more contrast, more noise
+  clahe_tile_grid_size: [8, 8] # Grid size for local equalization. Smaller = more local adaptation
+
 paths:
   output_dir: "output_imgs/patches_{patch_size}_{experiment_name}"
   data_dir: "data"
@@ -23,7 +30,7 @@ model:
   in_channels: 3
   classes: 5 # Reduced from 6 since LINE is now treated as background
   learning_rate: 0.0001 # Lower LR for pretrained models (was 0.001)
-  batch_size: 32 # Reduced for ResNet34 memory usage (adjust if GPU allows more)
+  batch_size: 48 # Reduced for ResNet34 memory usage (adjust if GPU allows more)
   epochs: 150 # High ceiling - early stopping will decide when to stop
   device: "cuda" # cpu or cuda
 
@@ -32,7 +39,7 @@ wandb:
   project: "detect-electrical-utility"
   entity: null # Your W&B username/team (null for default)
   run_name: "baseline_resnet34_{timestamp}"
-  tags: ["unet", "resnet34", "imagenet", "512_patches", "baseline"]
+  tags: ["unet", "resnet34", "imagenet", "512_patches", "baseline", "clahe"]
   log_model: true # Save model checkpoints to W&B
   save_code: true # Upload code to W&B
   notes: "BASELINE: U-Net + ResNet34 + ImageNet pretrained, combined loss"
@@ -62,11 +69,11 @@ metrics:
 
 # Training Enhancements
 training:
-  experiment_name: "baseline_resnet34_fixed" # Used for folder naming and W&B grouping
+  experiment_name: "baseline_resnet34_clahe" # Used for folder naming and W&B grouping
   seed: 43 # Random seed for reproducibility
   gradient_accumulation_steps: 4 # Effective batch size = 8 * 4 = 32
   mixed_precision: true # Enable AMP for faster training (requires compatible GPU)
-  early_stopping_patience: 25 # Give model time to learn minority classes
+  early_stopping_patience: 10 # Give model time to learn minority classes
   lr_scheduler: "reduce_on_plateau" # Better for finding optimal LR
   lr_scheduler_params:
     # Cosine annealing
@@ -89,23 +96,27 @@ training:
     nesterov: true
 
   # === CLASS IMBALANCE SETTINGS ===
-  loss_function: "combined" # cross_entropy, dice, focal, combined (recommended: focal or combined)
+  loss_function: "focal" # cross_entropy, dice, focal, combined (recommended: focal or combined)
   auto_class_weights: true # Automatically calculate class weights from training data
   class_weights: null # Manual weights (ignored if auto_class_weights is true)
   loss_alpha: 0.5 # For combined loss: weight of CE (0.5 = equal CE + Dice)
   loss_gamma: 2.0 # Focal loss gamma: higher = more focus on hard examples (2.0 is standard)
 
-# Data Augmentation Configuration (simplified for speed)
+# Data Augmentation Configuration
+# Applied ONLINE during training (adds variation, slower per-epoch but better generalization)
+# Color jitter/blur help model handle varying lighting and sensor noise in satellite imagery
 augmentation:
-  enabled: true
-  horizontal_flip: 0.5
-  vertical_flip: 0.5
-  rotation: 15 # Reduced from 30 for faster augmentation
-  brightness: 0.1 # Reduced for faster augmentation
-  contrast: 0.1
-  saturation: 0.1
-  gaussian_blur: false # Disabled for speed
-  blur_kernel_size: 3
+  enabled: true # Set to false to disable all augmentation
+  horizontal_flip: 0.5 # Probability of horizontal flip (power lines can be in any orientation)
+  vertical_flip: 0.5 # Probability of vertical flip
+  rotation: 15 # Max rotation angle in degrees (reduced from 30 for faster augmentation)
+  brightness: 0.1 # Brightness jitter (helps with varying lighting conditions)
+  contrast: 0.15 # Contrast jitter (complements CLAHE, adds variation during training)
+  saturation: 0.1 # Saturation jitter (handles vegetation/terrain color variations)
+  gaussian_blur: false # Blur augmentation (simulates atmospheric effects, disabled for speed)
+  blur_kernel_size: 3 # Kernel size for Gaussian blur (must be odd)
+
+# NOTE: ImageNet normalization is automatically applied when encoder_weights="imagenet"
 
 # Checkpoint Configuration
 checkpoints:

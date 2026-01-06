@@ -100,6 +100,51 @@ def resample_to_target_gsd(
     return np.array(img_resampled), np.array(mask_resampled)
 
 
+def apply_clahe(
+    image_arr: np.ndarray,
+    clip_limit: float = 2.0,
+    tile_grid_size: tuple[int, int] = (8, 8),
+) -> np.ndarray:
+    """Apply Contrast Limited Adaptive Histogram Equalization (CLAHE) to enhance local contrast.
+
+    CLAHE is particularly effective for satellite imagery with thin structures like power lines,
+    as it enhances local contrast without over-amplifying noise. Applied per RGB channel.
+
+    Args:
+        image_arr: Input image array (H, W, C) in uint8 format.
+        clip_limit: Threshold for contrast limiting (higher = more contrast). Typical: 2.0-4.0.
+        tile_grid_size: Size of grid for histogram equalization. Smaller = more local adaptation.
+
+    Returns:
+        Enhanced image array with same shape and dtype as input.
+
+    Raises:
+        ImportError: If opencv-python (cv2) is not installed.
+    """
+    try:
+        import cv2
+    except ImportError:
+        logger.error(
+            "opencv-python is required for CLAHE. Install with: uv add opencv-python"
+        )
+        raise
+
+    # Create CLAHE object
+    clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid_size)
+
+    # Apply to each channel separately
+    channels = [clahe.apply(image_arr[:, :, i]) for i in range(image_arr.shape[2])]
+
+    # Stack channels back together
+    enhanced = np.stack(channels, axis=2)
+
+    logger.debug(
+        f"Applied CLAHE: clip_limit={clip_limit}, tile_grid_size={tile_grid_size}"
+    )
+
+    return enhanced
+
+
 def remap_classes(
     mask_arr: np.ndarray,
     classes_to_background: list[int] | None = None,
@@ -358,6 +403,15 @@ def jpg_paths_to_patches(cfg):
         # load img arr
         PIL_obj = Image.open(jpg_path)
         img_arr = np.array(PIL_obj)
+
+        # Apply CLAHE enhancement if enabled
+        if cfg.preprocessing.apply_clahe:
+            img_arr = apply_clahe(
+                img_arr,
+                clip_limit=cfg.preprocessing.clahe_clip_limit,
+                tile_grid_size=cfg.preprocessing.clahe_tile_grid_size,
+            )
+            logger.info(f"{filename}: Applied CLAHE enhancement")
 
         # assuming that mask files are all .npz files
         npz_path = jpg_path.with_suffix(".npz")

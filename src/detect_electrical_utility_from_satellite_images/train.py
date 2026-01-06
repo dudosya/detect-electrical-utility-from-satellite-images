@@ -18,6 +18,104 @@ import wandb
 from .config import AppConfig
 from .dataset import SatteliteImgsDataset
 from .losses import calculate_class_weights, create_loss_function
+
+
+# ImageNet statistics for normalization (used with pretrained weights)
+IMAGENET_MEAN = [0.485, 0.456, 0.406]
+IMAGENET_STD = [0.229, 0.224, 0.225]
+
+
+def create_train_transforms(cfg: AppConfig) -> torchvision.transforms.v2.Compose:
+    """Create training transforms with augmentation based on config.
+
+    Args:
+        cfg: Application configuration containing augmentation settings.
+
+    Returns:
+        Composed transforms for training with augmentation, including:
+        - Geometric transforms (flips, rotation) if enabled
+        - Photometric transforms (color jitter, blur) if enabled
+        - ImageNet normalization for pretrained models
+        - Type conversions for PyTorch
+    """
+    from torchvision.transforms import v2, InterpolationMode
+
+    transforms_list = []
+
+    if cfg.augmentation.enabled:
+        # Geometric augmentations (applied to both image and mask)
+        if cfg.augmentation.horizontal_flip > 0:
+            transforms_list.append(v2.RandomHorizontalFlip(p=cfg.augmentation.horizontal_flip))
+        if cfg.augmentation.vertical_flip > 0:
+            transforms_list.append(v2.RandomVerticalFlip(p=cfg.augmentation.vertical_flip))
+        if cfg.augmentation.rotation > 0:
+            transforms_list.append(
+                v2.RandomRotation(
+                    degrees=cfg.augmentation.rotation,
+                    interpolation=InterpolationMode.BILINEAR,
+                )
+            )
+
+        # Photometric augmentations (applied only to image)
+        if any([cfg.augmentation.brightness, cfg.augmentation.contrast, cfg.augmentation.saturation]):
+            transforms_list.append(
+                v2.ColorJitter(
+                    brightness=cfg.augmentation.brightness,
+                    contrast=cfg.augmentation.contrast,
+                    saturation=cfg.augmentation.saturation,
+                )
+            )
+        if cfg.augmentation.gaussian_blur:
+            transforms_list.append(v2.GaussianBlur(kernel_size=cfg.augmentation.blur_kernel_size))
+
+    # Convert to float32 and scale to [0, 1]
+    transforms_list.append(v2.ToDtype(dtype=torch.float32, scale=True))
+
+    # Apply ImageNet normalization (for pretrained models)
+    if cfg.model.encoder_weights == "imagenet":
+        transforms_list.append(v2.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD))
+
+    # Convert mask to long dtype (must be last)
+    transforms_list.append(
+        v2.Lambda(
+            lambda x: x.to(torch.long)
+            if hasattr(x, "__class__") and x.__class__.__name__ == "Mask"
+            else x,
+        )
+    )
+
+    return v2.Compose(transforms_list)
+
+
+def create_val_transforms(cfg: AppConfig) -> torchvision.transforms.v2.Compose:
+    """Create validation transforms without augmentation.
+
+    Args:
+        cfg: Application configuration.
+
+    Returns:
+        Composed transforms for validation (no augmentation).
+    """
+    from torchvision.transforms import v2
+
+    transforms_list = [
+        v2.ToDtype(dtype=torch.float32, scale=True),
+    ]
+
+    # Apply ImageNet normalization (for pretrained models)
+    if cfg.model.encoder_weights == "imagenet":
+        transforms_list.append(v2.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD))
+
+    # Convert mask to long dtype
+    transforms_list.append(
+        v2.Lambda(
+            lambda x: x.to(torch.long)
+            if hasattr(x, "__class__") and x.__class__.__name__ == "Mask"
+            else x,
+        )
+    )
+
+    return v2.Compose(transforms_list)
 from .metrics import calculate_all_metrics
 from .model import count_parameters, create_model, save_checkpoint
 from .utils import split_by_image, validate_split_by_image
@@ -455,36 +553,9 @@ def train_model(cfg: AppConfig, use_mock_data: bool = True) -> None:
             f"Split patches: {len(train_img_paths)} train, {len(val_img_paths)} validation"
         )
 
-        # Define transforms (same as in dataset.py)
-        from torchvision.transforms import v2
-
-        # Training transforms with augmentation
-        train_transforms = v2.Compose(
-            [
-                v2.RandomHorizontalFlip(),
-                v2.RandomVerticalFlip(),
-                v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
-                v2.GaussianBlur(kernel_size=3),
-                v2.ToDtype(dtype=torch.float32, scale=True),
-                v2.Lambda(
-                    lambda x: x.to(torch.long)
-                    if hasattr(x, "__class__") and x.__class__.__name__ == "Mask"
-                    else x,
-                ),
-            ],
-        )
-
-        # Validation transforms (no augmentation)
-        val_transforms = v2.Compose(
-            [
-                v2.ToDtype(dtype=torch.float32, scale=True),
-                v2.Lambda(
-                    lambda x: x.to(torch.long)
-                    if hasattr(x, "__class__") and x.__class__.__name__ == "Mask"
-                    else x,
-                ),
-            ],
-        )
+        # Create transforms using config-driven helper functions
+        train_transforms = create_train_transforms(cfg)
+        val_transforms = create_val_transforms(cfg)
 
         # Create datasets
         train_dataset = SatteliteImgsDataset(
