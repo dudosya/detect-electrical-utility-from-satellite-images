@@ -149,6 +149,10 @@ def evaluate_model(
     sample_masks = []
     sample_preds = []
 
+    # Determine which batch to sample from based on seed
+    num_batches = len(dataloader)
+    selected_batch = cfg.training.seed % num_batches if num_batches > 0 else 0
+
     with torch.no_grad():
         for batch_idx, (images, masks) in enumerate(dataloader):
             images = images.to(device)
@@ -162,7 +166,7 @@ def evaluate_model(
             all_targets.append(masks.cpu())
 
             # Store samples for visualization
-            if batch_idx == 0 and num_samples > 0:
+            if batch_idx == selected_batch and num_samples > 0:
                 n = min(num_samples, images.shape[0])
                 sample_images.extend(images.cpu()[:n])
                 sample_masks.extend(masks.cpu()[:n])

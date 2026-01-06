@@ -63,7 +63,7 @@ metrics:
 # Training Enhancements
 training:
   experiment_name: "baseline_resnet34_fixed" # Used for folder naming and W&B grouping
-  seed: 42 # Random seed for reproducibility
+  seed: 43 # Random seed for reproducibility
   gradient_accumulation_steps: 4 # Effective batch size = 8 * 4 = 32
   mixed_precision: true # Enable AMP for faster training (requires compatible GPU)
   early_stopping_patience: 25 # Give model time to learn minority classes
