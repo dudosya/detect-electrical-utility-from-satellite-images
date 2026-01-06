@@ -1,8 +1,8 @@
 preprocessing:
   patch_size: 512 # Reduced from 1024 for faster experimentation
   background_fraction: 0.05 # fraction of background patches to save
-  classes_to_background: [3] # Remap LINE (class 1) to background - set to null to keep all classes
-  fixed_class_order: [1, 2, 4, 5] # Stable mapping after ignoring class 3 -> 1->1,2->2,4->3,5->4
+  classes_to_background: [] # Remap LINE (class 1) to background - set to null to keep all classes
+  fixed_class_order: [1, 2, 3, 4, 5] # Stable mapping after ignoring class 3 -> 1->1,2->2,4->3,5->4
   target_gsd_cm: 15.0 # Target GSD in cm/pixel for scale normalization (null to disable)
   gsd_tolerance: 0.05 # 5% tolerance - images within this range skip resampling
 
@@ -28,7 +28,7 @@ model:
   encoder_name: "resnet34" # BASELINE: resnet34 is standard, well-documented
   encoder_weights: "imagenet" # IMPORTANT: pretrained weights for faster convergence
   in_channels: 3
-  classes: 5 # Reduced from 6 since LINE is now treated as background
+  classes: 6 # Reduced from 6 since LINE is now treated as background
   learning_rate: 0.0001 # Lower LR for pretrained models (was 0.001)
   batch_size: 48 # Reduced for ResNet34 memory usage (adjust if GPU allows more)
   epochs: 150 # High ceiling - early stopping will decide when to stop

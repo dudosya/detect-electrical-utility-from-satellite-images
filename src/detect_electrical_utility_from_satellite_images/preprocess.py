@@ -166,7 +166,7 @@ def remap_classes(
 
     Example:
         If original classes are [0, 1, 2, 3, 4, 5] and classes_to_background=[1]:
-        - Class 1 (LINE) becomes 0 (background)
+        - Class 3 (LINE) becomes 0 (background)
         - Classes 2,3,4,5 become 1,2,3,4 respectively
         Result: [0, 1, 2, 3, 4] (5 classes instead of 6)
     """
