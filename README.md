@@ -207,6 +207,167 @@ Global Options:
   --help               Show help message
 ```
 
+## Tutorial: Complete Training Pipeline
+
+This section walks through training GridTracer from scratch on a new dataset.
+
+### Step 1: Prepare Raw Data
+
+Place satellite imagery and annotations in the `raw_data/` directory:
+
+```
+raw_data/
+└── NZ_Dunedin/
+    ├── NZ_Dunedin_1.jpg              # Satellite tile (~5000x5000 px)
+    ├── NZ_Dunedin_1.csv              # Tower/line annotations
+    ├── NZ_Dunedin_1_multiclass.png   # Segmentation mask
+    ├── NZ_Dunedin_2.jpg
+    ├── NZ_Dunedin_2.csv
+    └── ...
+```
+
+Required files per tile:
+
+- `.jpg`: RGB satellite image
+- `.csv`: Annotations with columns `Object ID`, `Type`, `X`, `Y`
+- `_multiclass.png`: Mask with pixel values 1=Tower, 2=OtherTower, 3=Line
+
+### Step 2: Preprocess Data
+
+Generate 500x500 pixel training patches:
+
+```bash
+uv run main preprocess NZ_Dunedin
+```
+
+Output structure:
+
+```
+preprocessed_data/patches/NZ_Dunedin/
+├── images/           # 500x500 RGB patches
+├── masks/            # Corresponding segmentation masks
+└── annotations/      # Tower bounding boxes (JSON)
+```
+
+Verify preprocessing:
+
+```bash
+ls preprocessed_data/patches/NZ_Dunedin/images | wc -l
+```
+
+### Step 3: Configure Training
+
+Edit `config.yaml` for your hardware:
+
+```yaml
+training:
+  max_epochs: 50 # Increase for better results
+  batch_size: 2 # Reduce if GPU OOM
+  num_workers: 0 # 0 for Windows, 4+ for Linux
+
+wandb:
+  enabled: true # Set false to disable tracking
+  project: "gridtracer"
+```
+
+### Step 4: Train Tower Detector (Stage 1)
+
+```bash
+uv run main train tower
+```
+
+Training output:
+
+- Progress bar with loss/mAP metrics
+- Checkpoints saved to `checkpoints/tower/{region}/{timestamp}/`
+- Metrics logged to W&B (if enabled)
+
+Expected duration: ~1-2 hours for 50 epochs on RTX 3050.
+
+Monitor training:
+
+```bash
+# List checkpoints
+uv run main evaluate tower --list
+
+# Quick evaluation during training
+uv run main evaluate tower --no-show
+```
+
+### Step 5: Train Line Segmentor (Stage 2)
+
+```bash
+uv run main train line
+```
+
+Training output:
+
+- Progress bar with loss/IoU metrics
+- Checkpoints saved to `checkpoints/line/{region}/{timestamp}/`
+
+Expected duration: ~1-2 hours for 50 epochs on RTX 3050.
+
+### Step 6: Evaluate Models
+
+```bash
+# Tower detection metrics
+uv run main evaluate tower
+# Output: mAP, mAP@50, Precision, Recall, F1
+
+# Line segmentation metrics
+uv run main evaluate line
+# Output: IoU, Dice, Precision, Recall, F1
+```
+
+Visualization files are saved next to checkpoints.
+
+### Step 7: Run Inference
+
+Test on a preprocessed patch:
+
+```bash
+uv run main infer preprocessed_data/patches/NZ_Dunedin/images/NZ_Dunedin_1_000003_x500_y500.png
+```
+
+Or on a raw tile (requires trained models):
+
+```bash
+uv run main infer raw_data/NZ_Dunedin/NZ_Dunedin_1.jpg --no-show
+```
+
+Results saved to `inference_results/{timestamp}/`:
+
+- `pipeline_summary.png`: All 3 stages visualized
+- `graph_overlay.png`: Final graph on image
+- `graph.json`: Machine-readable output
+
+### Step 8: Iterate
+
+To improve results:
+
+1. **More epochs**: Increase `training.max_epochs` in config
+2. **More data**: Add additional regions to `raw_data/`
+3. **Lower thresholds**: Reduce `graph_inference.connectivity_threshold` for more connections
+4. **Tune confidence**: Adjust `tower_detection.confidence_threshold`
+
+Re-train specific stage:
+
+```bash
+uv run main train tower --epochs 100
+uv run main train line --epochs 100
+```
+
+### Quick Reference
+
+| Task                   | Command                             |
+| ---------------------- | ----------------------------------- |
+| Preprocess all regions | `uv run main preprocess --all`      |
+| Train everything       | `uv run main train all`             |
+| Quick test             | `uv run main train tower --fast`    |
+| Check GPU              | `uv run main info`                  |
+| List checkpoints       | `uv run main evaluate tower --list` |
+| Full inference         | `uv run main infer image.jpg`       |
+
 ## Development
 
 ```bash
