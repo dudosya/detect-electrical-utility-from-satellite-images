@@ -161,7 +161,7 @@ def create_inference_summary(
     graph: PowerGridGraph,
     boxes: NDArray[np.float32],
     segmentation_map: NDArray[np.float32],
-    figsize: tuple[int, int] = (20, 10),
+    figsize: tuple[int, int] = (14, 14),
 ) -> Figure:
     """Create a comprehensive summary figure of the inference pipeline.
 
@@ -175,28 +175,17 @@ def create_inference_summary(
     Returns:
         Matplotlib figure with 4 subplots.
     """
-    # Use a dedicated colorbar axis to keep all 4 panels the same size.
-    fig = plt.figure(figsize=figsize, constrained_layout=True)
-    gs = fig.add_gridspec(
-        2,
-        3,
-        width_ratios=(1.0, 1.0, 0.05),
-        height_ratios=(1.0, 1.0),
-    )
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-    ax00 = fig.add_subplot(gs[0, 0])
-    ax01 = fig.add_subplot(gs[0, 1])
-    ax10 = fig.add_subplot(gs[1, 0])
-    ax11 = fig.add_subplot(gs[1, 1])
-    cax = fig.add_subplot(gs[:, 2])
+    fig, axes = plt.subplots(2, 2, figsize=figsize)
 
     # 1. Original image
-    ax00.imshow(image)
-    ax00.set_title("Input Image")
-    ax00.axis("off")
+    axes[0, 0].imshow(image)
+    axes[0, 0].set_title("Input Image")
+    axes[0, 0].axis("off")
 
     # 2. Tower detections
-    ax01.imshow(image)
+    axes[0, 1].imshow(image)
     for box in boxes:
         x1, y1, x2, y2 = box
         rect = mpatches.Rectangle(
@@ -207,26 +196,32 @@ def create_inference_summary(
             edgecolor="red",
             linewidth=2,
         )
-        ax01.add_patch(rect)
-    ax01.set_title(f"Stage 1: Tower Detection ({len(boxes)} towers)")
-    ax01.axis("off")
+        axes[0, 1].add_patch(rect)
+    axes[0, 1].set_title(f"Stage 1: Tower Detection ({len(boxes)} towers)")
+    axes[0, 1].axis("off")
 
-    # 3. Line segmentation
-    ax10.imshow(image, alpha=0.3)
-    im = ax10.imshow(segmentation_map, cmap="hot", alpha=0.7, vmin=0, vmax=1)
-    ax10.set_title("Stage 2: Line Segmentation")
-    ax10.axis("off")
+    # 3. Line segmentation (segmentation-only for clarity)
+    im = axes[1, 0].imshow(segmentation_map, cmap="hot", vmin=0, vmax=1)
+    axes[1, 0].set_title("Stage 2: Line Segmentation")
+    axes[1, 0].axis("off")
+
+    # Add a colorbar *only* for the segmentation panel (prevents squashing the whole grid)
+    divider = make_axes_locatable(axes[1, 0])
+    cax = divider.append_axes("right", size="4%", pad=0.04)
+    fig.colorbar(im, cax=cax)
 
     # 4. Final graph
-    ax11.imshow(image)
+    axes[1, 1].imshow(image)
     if graph.num_nodes > 0:
+        # Draw edges
         for i, j, score in graph.edge_list:
             x1, y1 = graph.nodes[i]
             x2, y2 = graph.nodes[j]
             color = mpl.colormaps["Reds"](0.3 + 0.7 * score)
-            ax11.plot([x1, x2], [y1, y2], color=color, linewidth=2)
+            axes[1, 1].plot([x1, x2], [y1, y2], color=color, linewidth=2)
 
-        ax11.scatter(
+        # Draw nodes
+        axes[1, 1].scatter(
             graph.nodes[:, 0],
             graph.nodes[:, 1],
             c="yellow",
@@ -237,13 +232,14 @@ def create_inference_summary(
             zorder=10,
         )
 
-    ax11.set_title(
+    axes[1, 1].set_title(
         f"Stage 3: Graph ({graph.num_nodes} nodes, {graph.num_edges} edges)"
     )
-    ax11.axis("off")
+    axes[1, 1].axis("off")
 
-    fig.colorbar(im, cax=cax)
     fig.suptitle("GridTracer Inference Pipeline", fontsize=14, fontweight="bold")
+    # Leave room for the suptitle.
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
     return fig
 
 
