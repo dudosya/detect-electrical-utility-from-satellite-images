@@ -6,7 +6,11 @@ from typing import Any
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.patheffects as patheffects
+import matplotlib as mpl
 from matplotlib.collections import LineCollection
+from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
 from numpy.typing import NDArray
 
 from detect_electrical_utility_from_satellite_images.models.graph_inference import (
@@ -23,7 +27,7 @@ def visualize_graph(
     show_scores: bool = True,
     title: str = "Power Grid Graph",
     figsize: tuple[int, int] = (14, 14),
-) -> plt.Figure:
+) -> Figure:
     """Visualize the inferred power grid graph overlaid on the image.
 
     Args:
@@ -50,18 +54,6 @@ def visualize_graph(
     # --- Main visualization with graph overlay ---
     ax_img.imshow(image)
 
-    # Draw ground truth edges (if provided)
-    if gt_centroids is not None and gt_adjacency is not None and len(gt_centroids) > 0:
-        for i in range(len(gt_centroids)):
-            for j in range(i + 1, len(gt_centroids)):
-                if gt_adjacency[i, j]:
-                    x1, y1 = gt_centroids[i]
-                    x2, y2 = gt_centroids[j]
-                    ax_img.plot(
-                        [x1, x2], [y1, y2],
-                        color="green", linewidth=2, alpha=0.6, linestyle="--",
-                    )
-
     # Draw predicted edges
     if graph.num_nodes > 0:
         edges = graph.edge_list
@@ -70,8 +62,8 @@ def visualize_graph(
             x2, y2 = graph.nodes[j]
             
             # Color by score intensity
-            color = plt.cm.Reds(0.3 + 0.7 * score)
-            ax_img.plot([x1, x2], [y1, y2], color=color, linewidth=2.5, alpha=0.9)
+            color = mpl.colormaps["Reds"](0.3 + 0.7 * score)
+            ax_img.plot([x1, x2], [y1, y2], color=color, linewidth=2.5, alpha=0.9, zorder=5)
             
             if show_scores:
                 mid_x = (x1 + x2) / 2
@@ -83,29 +75,57 @@ def visualize_graph(
                     ha="center", va="center",
                 )
 
-    # Draw ground truth towers
-    if gt_centroids is not None and len(gt_centroids) > 0:
-        ax_img.scatter(
-            gt_centroids[:, 0], gt_centroids[:, 1],
-            c="lime", s=80, marker="^", edgecolors="darkgreen",
-            linewidths=1.5, label="GT Towers", zorder=10,
-        )
-
     # Draw predicted towers
     if graph.num_nodes > 0:
         # Color by detection score
-        colors = plt.cm.YlOrRd(graph.node_scores)
+        colors = mpl.colormaps["YlOrRd"](graph.node_scores)
         ax_img.scatter(
             graph.nodes[:, 0], graph.nodes[:, 1],
             c=colors, s=100, marker="o", edgecolors="black",
-            linewidths=1.5, label="Predicted Towers", zorder=11,
+            linewidths=1.5, label="Predicted Towers", zorder=6,
+        )
+
+    # Draw ground truth edges/towers last so they remain visible
+    if gt_centroids is not None and gt_adjacency is not None and len(gt_centroids) > 0:
+        for i in range(len(gt_centroids)):
+            for j in range(i + 1, len(gt_centroids)):
+                if gt_adjacency[i, j]:
+                    x1, y1 = gt_centroids[i]
+                    x2, y2 = gt_centroids[j]
+                    (line,) = ax_img.plot(
+                        [x1, x2],
+                        [y1, y2],
+                        color="blue",
+                        linewidth=3,
+                        alpha=0.95,
+                        linestyle="--",
+                        zorder=8,
+                    )
+                    line.set_path_effects(
+                        [
+                            patheffects.Stroke(linewidth=5, foreground="white", alpha=0.9),
+                            patheffects.Normal(),
+                        ]
+                    )
+
+    if gt_centroids is not None and len(gt_centroids) > 0:
+        ax_img.scatter(
+            gt_centroids[:, 0],
+            gt_centroids[:, 1],
+            c="blue",
+            s=90,
+            marker="^",
+            edgecolors="white",
+            linewidths=2,
+            label="GT Towers",
+            zorder=9,
         )
 
     # Legend
     legend_elements = [
         mpatches.Patch(facecolor="none", edgecolor="red", linewidth=2, label="Predicted Edges"),
-        mpatches.Patch(facecolor="lime", edgecolor="darkgreen", label="GT Towers"),
-        plt.Line2D([0], [0], color="green", linestyle="--", label="GT Edges"),
+        mpatches.Patch(facecolor="blue", edgecolor="white", label="GT Towers"),
+        Line2D([0], [0], color="blue", linestyle="--", label="GT Edges"),
     ]
     ax_img.legend(handles=legend_elements, loc="upper right")
     ax_img.set_title(f"{title}\nNodes: {graph.num_nodes}, Edges: {graph.num_edges}")
@@ -142,7 +162,7 @@ def create_inference_summary(
     boxes: NDArray[np.float32],
     segmentation_map: NDArray[np.float32],
     figsize: tuple[int, int] = (20, 10),
-) -> plt.Figure:
+) -> Figure:
     """Create a comprehensive summary figure of the inference pipeline.
 
     Args:
@@ -177,7 +197,6 @@ def create_inference_summary(
     # 3. Line segmentation
     axes[1, 0].imshow(image, alpha=0.3)
     im = axes[1, 0].imshow(segmentation_map, cmap="hot", alpha=0.7, vmin=0, vmax=1)
-    plt.colorbar(im, ax=axes[1, 0], fraction=0.046, pad=0.04)
     axes[1, 0].set_title("Stage 2: Line Segmentation")
     axes[1, 0].axis("off")
 
@@ -188,7 +207,7 @@ def create_inference_summary(
         for i, j, score in graph.edge_list:
             x1, y1 = graph.nodes[i]
             x2, y2 = graph.nodes[j]
-            color = plt.cm.Reds(0.3 + 0.7 * score)
+            color = mpl.colormaps["Reds"](0.3 + 0.7 * score)
             axes[1, 1].plot([x1, x2], [y1, y2], color=color, linewidth=2)
         
         # Draw nodes
@@ -201,13 +220,16 @@ def create_inference_summary(
     axes[1, 1].set_title(f"Stage 3: Graph ({graph.num_nodes} nodes, {graph.num_edges} edges)")
     axes[1, 1].axis("off")
 
+    # Shared colorbar so subplot sizes remain symmetric
+    fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.046, pad=0.04)
+
     plt.suptitle("GridTracer Inference Pipeline", fontsize=14, fontweight="bold")
     plt.tight_layout()
     return fig
 
 
 def save_graph_visualization(
-    fig: plt.Figure,
+    fig: Figure,
     output_path: Path | str,
     dpi: int = 150,
 ) -> None:
@@ -229,7 +251,7 @@ def visualize_connectivity_scores(
     adjacency: NDArray[np.int32],
     threshold: float = 0.2,
     figsize: tuple[int, int] = (12, 5),
-) -> plt.Figure:
+) -> Figure:
     """Visualize edge score distribution and adjacency heatmap.
 
     Args:

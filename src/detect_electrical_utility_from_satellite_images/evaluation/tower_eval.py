@@ -7,6 +7,7 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from matplotlib.figure import Figure
 from numpy.typing import NDArray
 from PIL import Image
 from torchmetrics.detection import MeanAveragePrecision
@@ -64,7 +65,7 @@ def visualize_detections(
     score_threshold: float = 0.5,
     figsize: tuple[int, int] = (12, 12),
     title: str = "Tower Detection",
-) -> plt.Figure:
+) -> Figure:
     """Visualize detection results on an image.
 
     Args:
@@ -96,13 +97,13 @@ def visualize_detections(
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     ax.imshow(image)
 
-    # Draw ground truth boxes (green)
+    # Draw ground truth boxes (blue)
     if gt_boxes is not None and len(gt_boxes) > 0:
         for box in gt_boxes:
             x1, y1, x2, y2 = box
             rect = mpatches.Rectangle(
                 (x1, y1), x2 - x1, y2 - y1,
-                fill=False, edgecolor="green", linewidth=2, linestyle="--"
+                fill=False, edgecolor="blue", linewidth=2, linestyle="--"
             )
             ax.add_patch(rect)
 
@@ -131,7 +132,7 @@ def visualize_detections(
 
     # Legend
     legend_elements = [
-        mpatches.Patch(facecolor="none", edgecolor="green", linestyle="--", label="Ground Truth"),
+        mpatches.Patch(facecolor="none", edgecolor="blue", linestyle="--", label="Ground Truth"),
         mpatches.Patch(facecolor="none", edgecolor="red", label="Prediction (>0.7)"),
         mpatches.Patch(facecolor="none", edgecolor="orange", label="Prediction (0.5-0.7)"),
     ]
@@ -145,7 +146,7 @@ def visualize_detections(
 
 
 def save_visualization(
-    fig: plt.Figure,
+    fig: Figure,
     output_path: Path | str,
 ) -> None:
     """Save visualization to file.
@@ -166,7 +167,7 @@ def create_detection_grid(
     targets: list[dict[str, torch.Tensor]],
     max_images: int = 9,
     score_threshold: float = 0.5,
-) -> plt.Figure:
+) -> Figure:
     """Create a grid of detection visualizations.
 
     Args:
@@ -205,14 +206,14 @@ def create_detection_grid(
         pred = predictions[idx]
         target = targets[idx]
 
-        # Draw GT boxes (green)
+        # Draw GT boxes (blue)
         if "boxes" in target:
             gt_boxes = target["boxes"].cpu().numpy()
             for box in gt_boxes:
                 x1, y1, x2, y2 = box
                 rect = mpatches.Rectangle(
                     (x1, y1), x2 - x1, y2 - y1,
-                    fill=False, edgecolor="green", linewidth=2, linestyle="--"
+                    fill=False, edgecolor="blue", linewidth=2, linestyle="--"
                 )
                 ax.add_patch(rect)
 
@@ -241,7 +242,7 @@ def create_detection_grid(
         row, col = idx // n_cols, idx % n_cols
         axes[row][col].axis("off")
 
-    plt.suptitle("Tower Detection Results (Green=GT, Red=Pred)", fontsize=14)
+    plt.suptitle("Tower Detection Results (Blue=GT, Red=Pred)", fontsize=14)
     plt.tight_layout()
     return fig
 

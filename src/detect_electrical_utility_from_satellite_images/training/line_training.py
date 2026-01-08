@@ -7,7 +7,7 @@ import pytorch_lightning as pl
 import torch
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch.utils.data import ConcatDataset, DataLoader, random_split
+from torch.utils.data import ConcatDataset, DataLoader, Subset, random_split
 from torchmetrics import JaccardIndex
 
 from detect_electrical_utility_from_satellite_images.config import Config
@@ -305,39 +305,87 @@ class LineSegmentationDataModule(pl.LightningDataModule):
             stage: Either 'fit', 'validate', 'test', or 'predict'.
         """
         if stage in ("fit", "validate") or stage is None:
-            # Create datasets for all regions and combine
-            datasets = []
+            from detect_electrical_utility_from_satellite_images.utils.splits import (
+                indices_for_tiles,
+                load_or_create_tile_split,
+            )
+
+            log = get_logger()
+
+            train_parts: list[Any] = []
+            val_parts: list[Any] = []
+
             for patches_dir in self.patches_dirs:
                 ds = LineSegmentationDataset(
                     patches_dir=patches_dir,
                     line_width=self.line_width,
                     include_empty=False,  # Only patches with lines
                 )
-                datasets.append(ds)
+
+                if self.config.training.split_level == "tile":
+                    all_image_files = sorted((Path(patches_dir) / "images").glob("*.png"))
+                    split = load_or_create_tile_split(
+                        patches_dir=Path(patches_dir),
+                        image_files=all_image_files,
+                        seed=self.config.training.seed,
+                        val_split=self.val_split,
+                        persist=self.config.training.persist_split,
+                        split_file_name=self.config.training.split_file_name,
+                        min_val_tiles=self.config.training.min_val_tiles,
+                    )
+
+                    if not split.val_tiles:
+                        log.warning(
+                            "tile_split_insufficient_tiles_falling_back_to_patch_split",
+                            patches_dir=str(patches_dir),
+                            num_tiles=len(split.train_tiles),
+                        )
+                        total_size = len(ds)
+                        val_size = int(total_size * self.val_split)
+                        train_size = total_size - val_size
+                        train_ds, val_ds = random_split(
+                            ds,
+                            [train_size, val_size],
+                            generator=torch.Generator().manual_seed(
+                                self.config.training.seed
+                            ),
+                        )
+                        train_parts.append(train_ds)
+                        val_parts.append(val_ds)
+                    else:
+                        train_idx = indices_for_tiles(ds.image_files, set(split.train_tiles))
+                        val_idx = indices_for_tiles(ds.image_files, set(split.val_tiles))
+
+                        train_parts.append(Subset(ds, train_idx))
+                        val_parts.append(Subset(ds, val_idx))
+
+                        log.info(
+                            "tile_line_data_split",
+                            patches_dir=str(patches_dir),
+                            train_tiles=len(split.train_tiles),
+                            val_tiles=len(split.val_tiles),
+                            train_size=len(train_idx),
+                            val_size=len(val_idx),
+                        )
+                else:
+                    total_size = len(ds)
+                    val_size = int(total_size * self.val_split)
+                    train_size = total_size - val_size
+                    train_ds, val_ds = random_split(
+                        ds,
+                        [train_size, val_size],
+                        generator=torch.Generator().manual_seed(self.config.training.seed),
+                    )
+                    train_parts.append(train_ds)
+                    val_parts.append(val_ds)
 
             # Combine all region datasets
-            if len(datasets) == 1:
-                full_dataset = datasets[0]
+            if len(train_parts) == 1:
+                self.train_dataset = train_parts[0]
+                self.val_dataset = val_parts[0]
             else:
-                full_dataset = ConcatDataset(datasets)
-
-            # Split into train/val
-            total_size = len(full_dataset)
-            val_size = int(total_size * self.val_split)
-            train_size = total_size - val_size
-
-            self.train_dataset, self.val_dataset = random_split(
-                full_dataset,
-                [train_size, val_size],
-                generator=torch.Generator().manual_seed(self.config.training.seed),
-            )
-
-            get_logger().info(
-                "line_data_split",
-                num_regions=len(self.patches_dirs),
-                train_size=train_size,
-                val_size=val_size,
-            )
+                self.train_dataset = ConcatDataset(train_parts)
+                self.val_dataset = ConcatDataset(val_parts)
 
     def train_dataloader(self) -> DataLoader[Any]:
         """Create training dataloader."""

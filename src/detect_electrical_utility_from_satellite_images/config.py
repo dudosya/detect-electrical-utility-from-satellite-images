@@ -136,6 +136,24 @@ class TrainingConfig(BaseModel):
         description="Float32 matmul precision for Tensor Cores (medium=faster)",
     )
 
+    split_level: Literal["patch", "tile"] = Field(
+        default="tile",
+        description="How to split train/val: patch-level or tile-level (recommended)",
+    )
+    persist_split: bool = Field(
+        default=True,
+        description="Persist the computed split to disk for reproducible eval/infer",
+    )
+    split_file_name: str = Field(
+        default="split_tiles.json",
+        description="Split file name stored under each region patches directory",
+    )
+    min_val_tiles: int = Field(
+        default=1,
+        ge=0,
+        description="Minimum number of validation tiles (when tile-level splitting)",
+    )
+
 
 class WandbConfig(BaseModel):
     """Configuration for Weights & Biases experiment tracking."""

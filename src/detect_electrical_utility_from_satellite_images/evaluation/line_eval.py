@@ -6,6 +6,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from matplotlib.figure import Figure
 from numpy.typing import NDArray
 from PIL import Image
 
@@ -68,7 +69,7 @@ def visualize_segmentation(
     prediction: NDArray[np.float32],
     threshold: float = 0.5,
     alpha: float = 0.5,
-) -> plt.Figure:
+) -> Figure:
     """Create visualization of segmentation results.
 
     Args:
@@ -95,9 +96,9 @@ def visualize_segmentation(
     # 2. Ground truth overlay
     gt_overlay = image.copy()
     gt_mask = ground_truth > 0.5
-    gt_overlay[gt_mask] = gt_overlay[gt_mask] * (1 - alpha) + np.array([0, 1, 0]) * alpha
+    gt_overlay[gt_mask] = gt_overlay[gt_mask] * (1 - alpha) + np.array([0, 0, 1]) * alpha
     axes[0, 1].imshow(gt_overlay)
-    axes[0, 1].set_title("Ground Truth (green)")
+    axes[0, 1].set_title("Ground Truth (blue)")
     axes[0, 1].axis("off")
 
     # 3. Prediction probability map
@@ -133,7 +134,7 @@ def create_segmentation_grid(
     predictions: list[NDArray[np.float32]],
     threshold: float = 0.5,
     max_samples: int = 8,
-) -> plt.Figure:
+) -> Figure:
     """Create a grid visualization of multiple segmentation results.
 
     Args:
@@ -171,8 +172,8 @@ def create_segmentation_grid(
         gt_mask = gt > 0.5
         pred_mask = pred > threshold
 
-        # Show GT in green, prediction boundary in red
-        overlay[gt_mask] = overlay[gt_mask] * 0.5 + np.array([0, 0.7, 0]) * 0.5
+        # Show GT in blue, prediction boundary in red
+        overlay[gt_mask] = overlay[gt_mask] * 0.5 + np.array([0, 0, 1]) * 0.5
 
         axes[i, 1].imshow(overlay)
         axes[i, 1].set_title("Ground Truth" if i == 0 else "")

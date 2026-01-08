@@ -258,20 +258,22 @@ def _train_tower_detector(
     checkpoint_dir = Path(f"checkpoints/tower/{region_label}/{run_timestamp}")
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    # Setup callbacks - checkpoint saves best and last ONLY at end of training
-    callbacks: list[pl.Callback] = [
-        RichProgressBar(),
-        ModelCheckpoint(
-            dirpath=str(checkpoint_dir),
-            filename="best",
-            monitor="val/mAP",
-            mode="max",
-            save_top_k=1,
-            save_last=True,  # saves as last.ckpt
-            verbose=True,
-            every_n_epochs=max_epochs,  # Only save at the very end
-        ),
-    ]
+    # Setup callbacks
+    callbacks: list[pl.Callback] = [RichProgressBar()]
+    if not fast_dev_run:
+        # Checkpoint saves best and last ONLY at end of training
+        callbacks.append(
+            ModelCheckpoint(
+                dirpath=str(checkpoint_dir),
+                filename="best",
+                monitor="val/mAP",
+                mode="max",
+                save_top_k=1,
+                save_last=True,  # saves as last.ckpt
+                verbose=True,
+                every_n_epochs=max_epochs,  # Only save at the very end
+            )
+        )
 
     # Setup W&B logger from config (separate project for tower detection)
     logger: pl.loggers.Logger | bool = False
@@ -308,6 +310,7 @@ def _train_tower_detector(
         callbacks=callbacks,
         logger=logger,
         fast_dev_run=fast_dev_run,
+        enable_checkpointing=not fast_dev_run,
         log_every_n_steps=10,
         enable_progress_bar=True,
     )
@@ -379,20 +382,22 @@ def _train_line_segmentor(
     checkpoint_dir = Path(f"checkpoints/line/{region_label}/{run_timestamp}")
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    # Setup callbacks - checkpoint saves best and last ONLY at end of training
-    callbacks: list[pl.Callback] = [
-        RichProgressBar(),
-        ModelCheckpoint(
-            dirpath=str(checkpoint_dir),
-            filename="best",
-            monitor="val/IoU",
-            mode="max",
-            save_top_k=1,
-            save_last=True,
-            verbose=True,
-            every_n_epochs=max_epochs,
-        ),
-    ]
+    # Setup callbacks
+    callbacks: list[pl.Callback] = [RichProgressBar()]
+    if not fast_dev_run:
+        # Checkpoint saves best and last ONLY at end of training
+        callbacks.append(
+            ModelCheckpoint(
+                dirpath=str(checkpoint_dir),
+                filename="best",
+                monitor="val/IoU",
+                mode="max",
+                save_top_k=1,
+                save_last=True,
+                verbose=True,
+                every_n_epochs=max_epochs,
+            )
+        )
 
     # Setup W&B logger from config (separate project for line segmentation)
     logger: pl.loggers.Logger | bool = False
@@ -426,6 +431,7 @@ def _train_line_segmentor(
         callbacks=callbacks,
         logger=logger,
         fast_dev_run=fast_dev_run,
+        enable_checkpointing=not fast_dev_run,
         log_every_n_steps=10,
         enable_progress_bar=True,
     )
