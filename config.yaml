@@ -46,7 +46,7 @@ training:
 # Weights & Biases experiment tracking
 wandb:
   enabled: true
-  project: "gridtracer"
+  project: "gridtracer" # Base name: tower uses "gridtracer-tower", line uses "gridtracer-line"
   entity: null # your W&B username or team name
   tags: ["tower-detection"]
   notes: ""

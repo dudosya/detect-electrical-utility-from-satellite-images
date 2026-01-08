@@ -17,21 +17,16 @@ from detect_electrical_utility_from_satellite_images.logging_config import get_l
 def compute_detection_metrics(
     predictions: list[dict[str, torch.Tensor]],
     targets: list[dict[str, torch.Tensor]],
-    iou_thresholds: list[float] | None = None,
 ) -> dict[str, float]:
     """Compute detection metrics (mAP, precision, recall).
 
     Args:
         predictions: List of prediction dicts with 'boxes', 'scores', 'labels'.
         targets: List of target dicts with 'boxes', 'labels'.
-        iou_thresholds: IoU thresholds for mAP calculation.
 
     Returns:
-        Dictionary with mAP, precision, recall metrics.
+        Dictionary with mAP, mAP_50, mAP_75, precision, recall metrics.
     """
-    if iou_thresholds is None:
-        iou_thresholds = [0.5]
-
     # Format for torchmetrics
     preds = []
     tgts = []
@@ -47,8 +42,8 @@ def compute_detection_metrics(
             "labels": target["labels"].cpu(),
         })
 
-    # Compute mAP
-    metric = MeanAveragePrecision(iou_thresholds=iou_thresholds)
+    # Compute mAP using COCO-style evaluation (computes mAP, mAP_50, mAP_75)
+    metric = MeanAveragePrecision()
     metric.update(preds, tgts)
     results = metric.compute()
 

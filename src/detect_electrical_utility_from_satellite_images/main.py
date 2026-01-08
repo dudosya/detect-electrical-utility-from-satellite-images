@@ -273,7 +273,7 @@ def _train_tower_detector(
         ),
     ]
 
-    # Setup W&B logger from config
+    # Setup W&B logger from config (separate project for tower detection)
     logger: pl.loggers.Logger | bool = False
     wandb_cfg = config.wandb
     if use_wandb and wandb_cfg.enabled:
@@ -281,7 +281,7 @@ def _train_tower_detector(
         run_name = f"tower-{region_label}-{timestamp}"
         
         logger = WandbLogger(
-            project=wandb_cfg.project,
+            project=f"{wandb_cfg.project}-tower",
             entity=wandb_cfg.entity,
             name=run_name,
             tags=wandb_cfg.tags + regions + ["tower-detection"],
@@ -394,7 +394,7 @@ def _train_line_segmentor(
         ),
     ]
 
-    # Setup W&B logger from config
+    # Setup W&B logger from config (separate project for line segmentation)
     logger: pl.loggers.Logger | bool = False
     wandb_cfg = config.wandb
     if use_wandb and wandb_cfg.enabled:
@@ -402,7 +402,7 @@ def _train_line_segmentor(
         run_name = f"line-{region_label}-{timestamp}"
         
         logger = WandbLogger(
-            project=wandb_cfg.project,
+            project=f"{wandb_cfg.project}-line",
             entity=wandb_cfg.entity,
             name=run_name,
             tags=wandb_cfg.tags + regions + ["line-segmentation"],
