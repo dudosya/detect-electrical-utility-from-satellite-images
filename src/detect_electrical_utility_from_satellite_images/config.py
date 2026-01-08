@@ -117,7 +117,6 @@ class GraphInferenceConfig(BaseModel):
 class TrainingConfig(BaseModel):
     """Configuration for model training."""
 
-    iterations: int = Field(default=50000, description="Total training iterations")
     max_epochs: int = Field(default=50, description="Maximum training epochs")
     batch_size: int = Field(default=5, description="Batch size")
     initial_lr: float = Field(default=3e-3, description="Initial learning rate")

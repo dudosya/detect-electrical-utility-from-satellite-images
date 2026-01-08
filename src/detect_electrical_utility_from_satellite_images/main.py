@@ -1076,7 +1076,7 @@ def info() -> None:
     typer.echo(f"Patch size: {config.preprocessing.patch_size}px")
     typer.echo(f"Data directory: {config.paths.data_dir}")
     typer.echo(f"Output directory: {config.paths.output_dir}")
-    typer.echo(f"Training iterations: {config.training.iterations}")
+    typer.echo(f"Max epochs: {config.training.max_epochs}")
     typer.echo(f"Batch size: {config.training.batch_size}")
     typer.echo(f"Learning rate: {config.training.initial_lr}")
 

@@ -12,6 +12,7 @@ logs/
 checkpoints/
 wandb/
 inference_results/
+ELUTIL.ipynb
 
 
 # Byte-compiled / optimized / DLL files
