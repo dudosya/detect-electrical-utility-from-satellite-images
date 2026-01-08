@@ -72,11 +72,6 @@ class TowerDetectorModule(pl.LightningModule):
 
         # Detection metrics
         self.val_map = MeanAveragePrecision(iou_thresholds=[0.5, 0.75])
-        
-        # Store validation predictions for visualization
-        self.val_predictions: list[dict[str, torch.Tensor]] = []
-        self.val_targets: list[dict[str, torch.Tensor]] = []
-        self.val_images: list[torch.Tensor] = []
 
     def forward(
         self,
@@ -172,15 +167,6 @@ class TowerDetectorModule(pl.LightningModule):
         ]
         self.val_map.update(preds_formatted, targets_formatted)
 
-        # Store for visualization (limit to prevent memory issues)
-        if len(self.val_images) < 16:
-            for img, pred, tgt in zip(images, predictions, targets, strict=False):
-                if len(self.val_images) >= 16:
-                    break
-                self.val_images.append(img.cpu())
-                self.val_predictions.append({k: v.cpu() for k, v in pred.items()})
-                self.val_targets.append({k: v.cpu() for k, v in tgt.items()})
-
     def on_validation_epoch_end(self) -> None:
         """Compute and log validation metrics at end of epoch."""
         # Compute mAP
@@ -193,40 +179,8 @@ class TowerDetectorModule(pl.LightningModule):
         if "mar_100" in map_results:
             self.log("val/recall", map_results["mar_100"], sync_dist=True)
 
-        # Log to wandb with visualizations
-        if self.logger and hasattr(self.logger, "experiment"):
-            self._log_visualizations()
-
         # Reset for next epoch
         self.val_map.reset()
-        self.val_predictions.clear()
-        self.val_targets.clear()
-        self.val_images.clear()
-
-    def _log_visualizations(self) -> None:
-        """Log visualization images to wandb."""
-        try:
-            import wandb
-            from detect_electrical_utility_from_satellite_images.evaluation import (
-                create_detection_grid,
-            )
-
-            if len(self.val_images) > 0:
-                fig = create_detection_grid(
-                    self.val_images,
-                    self.val_predictions,
-                    self.val_targets,
-                    max_images=9,
-                    score_threshold=self.config.tower_detection.confidence_threshold,
-                )
-                self.logger.experiment.log({
-                    "val_detections": wandb.Image(fig),
-                    "epoch": self.current_epoch,
-                })
-                import matplotlib.pyplot as plt
-                plt.close(fig)
-        except Exception as e:
-            self.log_fn.warning("visualization_failed", error=str(e))
 
     def configure_optimizers(self) -> dict[str, Any]:
         """Configure optimizer and scheduler.

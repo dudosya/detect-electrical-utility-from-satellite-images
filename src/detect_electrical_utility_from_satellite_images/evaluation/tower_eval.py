@@ -15,18 +15,101 @@ from torchmetrics.detection import MeanAveragePrecision
 from detect_electrical_utility_from_satellite_images.logging_config import get_logger
 
 
+def _box_iou_xyxy(
+    boxes1: torch.Tensor,
+    boxes2: torch.Tensor,
+) -> torch.Tensor:
+    """Compute pairwise IoU for axis-aligned boxes in XYXY format."""
+    if boxes1.numel() == 0 or boxes2.numel() == 0:
+        return torch.zeros((boxes1.shape[0], boxes2.shape[0]), dtype=torch.float32)
+
+    x11, y11, x12, y12 = boxes1.unbind(dim=1)
+    x21, y21, x22, y22 = boxes2.unbind(dim=1)
+
+    inter_x1 = torch.maximum(x11[:, None], x21[None, :])
+    inter_y1 = torch.maximum(y11[:, None], y21[None, :])
+    inter_x2 = torch.minimum(x12[:, None], x22[None, :])
+    inter_y2 = torch.minimum(y12[:, None], y22[None, :])
+
+    inter_w = (inter_x2 - inter_x1).clamp(min=0)
+    inter_h = (inter_y2 - inter_y1).clamp(min=0)
+    inter_area = inter_w * inter_h
+
+    area1 = ((x12 - x11).clamp(min=0) * (y12 - y11).clamp(min=0))[:, None]
+    area2 = ((x22 - x21).clamp(min=0) * (y22 - y21).clamp(min=0))[None, :]
+    union = area1 + area2 - inter_area
+    return torch.where(union > 0, inter_area / union, torch.zeros_like(union))
+
+
+def _detection_counts_at_thresholds(
+    predictions: list[dict[str, torch.Tensor]],
+    targets: list[dict[str, torch.Tensor]],
+    score_threshold: float,
+    iou_threshold: float,
+    positive_label: int = 1,
+) -> tuple[int, int, int]:
+    """Compute TP/FP/FN using greedy IoU matching at given thresholds."""
+    tp = 0
+    fp = 0
+    fn = 0
+
+    for pred, target in zip(predictions, targets, strict=False):
+        pred_boxes = pred.get("boxes", torch.empty((0, 4)))
+        pred_scores = pred.get("scores", torch.empty((0,)))
+        pred_labels = pred.get("labels", torch.empty((0,), dtype=torch.long))
+
+        gt_boxes = target.get("boxes", torch.empty((0, 4)))
+        gt_labels = target.get("labels", torch.empty((0,), dtype=torch.long))
+
+        # Keep only the tower class.
+        pred_keep = (pred_labels == positive_label) & (pred_scores >= score_threshold)
+        gt_keep = gt_labels == positive_label
+
+        pred_boxes = pred_boxes[pred_keep].detach().cpu().float()
+        pred_scores = pred_scores[pred_keep].detach().cpu().float()
+        gt_boxes = gt_boxes[gt_keep].detach().cpu().float()
+
+        if pred_boxes.numel() == 0:
+            fn += int(gt_boxes.shape[0])
+            continue
+        if gt_boxes.numel() == 0:
+            fp += int(pred_boxes.shape[0])
+            continue
+
+        # Greedy matching by descending score.
+        order = torch.argsort(pred_scores, descending=True)
+        pred_boxes = pred_boxes[order]
+
+        ious = _box_iou_xyxy(pred_boxes, gt_boxes)
+        matched_gt = torch.zeros((gt_boxes.shape[0],), dtype=torch.bool)
+
+        for pred_idx in range(pred_boxes.shape[0]):
+            best_iou, best_gt_idx = torch.max(ious[pred_idx], dim=0)
+            if best_iou.item() >= iou_threshold and not matched_gt[best_gt_idx].item():
+                tp += 1
+                matched_gt[best_gt_idx] = True
+            else:
+                fp += 1
+
+        fn += int((~matched_gt).sum().item())
+
+    return tp, fp, fn
+
+
 def compute_detection_metrics(
     predictions: list[dict[str, torch.Tensor]],
     targets: list[dict[str, torch.Tensor]],
+    score_threshold: float = 0.5,
+    iou_threshold: float = 0.5,
 ) -> dict[str, float]:
-    """Compute detection metrics (mAP, precision, recall).
+    """Compute detection metrics.
 
     Args:
         predictions: List of prediction dicts with 'boxes', 'scores', 'labels'.
         targets: List of target dicts with 'boxes', 'labels'.
 
     Returns:
-        Dictionary with mAP, mAP_50, mAP_75, precision, recall metrics.
+        Dictionary with COCO-style mAP/mAR and thresholded precision/recall/F1.
     """
     # Format for torchmetrics
     preds = []
@@ -48,13 +131,42 @@ def compute_detection_metrics(
     metric.update(preds, tgts)
     results = metric.compute()
 
-    return {
-        "mAP": results["map"].item(),
-        "mAP_50": results["map_50"].item(),
-        "mAP_75": results["map_75"].item(),
-        "precision": results["map"].item(),  # Approximation
-        "recall": results["mar_100"].item() if "mar_100" in results else 0.0,
+    # Thresholded PR/F1 (more intuitive for users) at IoU>=iou_threshold.
+    tp, fp, fn = _detection_counts_at_thresholds(
+        predictions=preds,
+        targets=tgts,
+        score_threshold=score_threshold,
+        iou_threshold=iou_threshold,
+    )
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+
+    metrics: dict[str, float] = {
+        # COCO-style mAP.
+        "mAP": float(results["map"].item()),
+        "mAP_50": float(results["map_50"].item()),
+        "mAP_75": float(results["map_75"].item()),
+        # COCO-style mAR (if available).
+        "mAR_1": float(results["mar_1"].item()) if "mar_1" in results else 0.0,
+        "mAR_10": float(results["mar_10"].item()) if "mar_10" in results else 0.0,
+        "mAR_100": float(results["mar_100"].item()) if "mar_100" in results else 0.0,
+        # Thresholded PR/F1 (IoU + score threshold).
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1": float(f1),
+        # Counts for interpretability.
+        "tp": float(tp),
+        "fp": float(fp),
+        "fn": float(fn),
     }
+
+    # Optional size breakdowns (torchmetrics exposes these on some versions).
+    for key in ("map_small", "map_medium", "map_large"):
+        if key in results:
+            metrics[key] = float(results[key].item())
+
+    return metrics
 
 
 def visualize_detections(
@@ -300,7 +412,12 @@ def evaluate_model_on_dataset(
 
     # Compute metrics
     log.info("computing_metrics", n_samples=len(all_predictions))
-    metrics = compute_detection_metrics(all_predictions, all_targets)
+    metrics = compute_detection_metrics(
+        all_predictions,
+        all_targets,
+        score_threshold=score_threshold,
+        iou_threshold=0.5,
+    )
 
     log.info(
         "evaluation_complete",

@@ -175,56 +175,75 @@ def create_inference_summary(
     Returns:
         Matplotlib figure with 4 subplots.
     """
-    fig, axes = plt.subplots(2, 2, figsize=figsize)
-    
+    # Use a dedicated colorbar axis to keep all 4 panels the same size.
+    fig = plt.figure(figsize=figsize, constrained_layout=True)
+    gs = fig.add_gridspec(
+        2,
+        3,
+        width_ratios=(1.0, 1.0, 0.05),
+        height_ratios=(1.0, 1.0),
+    )
+
+    ax00 = fig.add_subplot(gs[0, 0])
+    ax01 = fig.add_subplot(gs[0, 1])
+    ax10 = fig.add_subplot(gs[1, 0])
+    ax11 = fig.add_subplot(gs[1, 1])
+    cax = fig.add_subplot(gs[:, 2])
+
     # 1. Original image
-    axes[0, 0].imshow(image)
-    axes[0, 0].set_title("Input Image")
-    axes[0, 0].axis("off")
+    ax00.imshow(image)
+    ax00.set_title("Input Image")
+    ax00.axis("off")
 
     # 2. Tower detections
-    axes[0, 1].imshow(image)
+    ax01.imshow(image)
     for box in boxes:
         x1, y1, x2, y2 = box
         rect = mpatches.Rectangle(
-            (x1, y1), x2 - x1, y2 - y1,
-            fill=False, edgecolor="red", linewidth=2,
+            (x1, y1),
+            x2 - x1,
+            y2 - y1,
+            fill=False,
+            edgecolor="red",
+            linewidth=2,
         )
-        axes[0, 1].add_patch(rect)
-    axes[0, 1].set_title(f"Stage 1: Tower Detection ({len(boxes)} towers)")
-    axes[0, 1].axis("off")
+        ax01.add_patch(rect)
+    ax01.set_title(f"Stage 1: Tower Detection ({len(boxes)} towers)")
+    ax01.axis("off")
 
     # 3. Line segmentation
-    axes[1, 0].imshow(image, alpha=0.3)
-    im = axes[1, 0].imshow(segmentation_map, cmap="hot", alpha=0.7, vmin=0, vmax=1)
-    axes[1, 0].set_title("Stage 2: Line Segmentation")
-    axes[1, 0].axis("off")
+    ax10.imshow(image, alpha=0.3)
+    im = ax10.imshow(segmentation_map, cmap="hot", alpha=0.7, vmin=0, vmax=1)
+    ax10.set_title("Stage 2: Line Segmentation")
+    ax10.axis("off")
 
     # 4. Final graph
-    axes[1, 1].imshow(image)
+    ax11.imshow(image)
     if graph.num_nodes > 0:
-        # Draw edges
         for i, j, score in graph.edge_list:
             x1, y1 = graph.nodes[i]
             x2, y2 = graph.nodes[j]
             color = mpl.colormaps["Reds"](0.3 + 0.7 * score)
-            axes[1, 1].plot([x1, x2], [y1, y2], color=color, linewidth=2)
-        
-        # Draw nodes
-        axes[1, 1].scatter(
-            graph.nodes[:, 0], graph.nodes[:, 1],
-            c="yellow", s=80, marker="o", edgecolors="red",
-            linewidths=1.5, zorder=10,
+            ax11.plot([x1, x2], [y1, y2], color=color, linewidth=2)
+
+        ax11.scatter(
+            graph.nodes[:, 0],
+            graph.nodes[:, 1],
+            c="yellow",
+            s=80,
+            marker="o",
+            edgecolors="red",
+            linewidths=1.5,
+            zorder=10,
         )
-    
-    axes[1, 1].set_title(f"Stage 3: Graph ({graph.num_nodes} nodes, {graph.num_edges} edges)")
-    axes[1, 1].axis("off")
 
-    # Shared colorbar so subplot sizes remain symmetric
-    fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.046, pad=0.04)
+    ax11.set_title(
+        f"Stage 3: Graph ({graph.num_nodes} nodes, {graph.num_edges} edges)"
+    )
+    ax11.axis("off")
 
-    plt.suptitle("GridTracer Inference Pipeline", fontsize=14, fontweight="bold")
-    plt.tight_layout()
+    fig.colorbar(im, cax=cax)
+    fig.suptitle("GridTracer Inference Pipeline", fontsize=14, fontweight="bold")
     return fig
 
 

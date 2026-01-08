@@ -701,14 +701,16 @@ def _evaluate_tower(
     typer.echo(f"mAP:        {metrics['mAP']:.4f}")
     typer.echo(f"mAP@50:     {metrics['mAP_50']:.4f}")
     typer.echo(f"mAP@75:     {metrics['mAP_75']:.4f}")
+    if "mAR_100" in metrics:
+        typer.echo(f"mAR@100:    {metrics['mAR_100']:.4f}")
+
+    typer.echo("")
+    typer.echo("Thresholded metrics (IoU>=0.5 + score threshold):")
     typer.echo(f"Precision:  {metrics['precision']:.4f}")
     typer.echo(f"Recall:     {metrics['recall']:.4f}")
-    
-    # Compute F1
-    precision = metrics['precision']
-    recall = metrics['recall']
-    f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
-    typer.echo(f"F1 Score:   {f1:.4f}")
+    typer.echo(f"F1 Score:   {metrics.get('f1', 0.0):.4f}")
+    if all(k in metrics for k in ("tp", "fp", "fn")):
+        typer.echo(f"Counts:     TP={int(metrics['tp'])} FP={int(metrics['fp'])} FN={int(metrics['fn'])}")
 
     log.info(
         "tower_metrics",
@@ -716,6 +718,7 @@ def _evaluate_tower(
         mAP_50=metrics["mAP_50"],
         precision=metrics["precision"],
         recall=metrics["recall"],
+        f1=metrics.get("f1", 0.0),
     )
 
     # Get visualization figure from results
