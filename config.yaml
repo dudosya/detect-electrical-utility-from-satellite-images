@@ -1,6 +1,6 @@
 preprocessing:
   patch_size: 500
-  background_fraction: 0.1 # fraction of background patches to save
+  background_fraction: 0.1
 
 paths:
   output_dir: "preprocessed_data/patches"
@@ -14,41 +14,41 @@ logging:
 
 # Stage 1: Tower Detection (Faster R-CNN)
 tower_detection:
-  backbone: "inception_v2"
-  anchor_areas: [100, 625, 2500, 10000, 40000] # 10², 25², 50², 100², 200²
-  anchor_ratios: [0.5, 1.0, 2.0]
-  confidence_threshold: 0.5
-  nms_threshold: 0.5
+  backbone: "resnet50" # "resnet50" (default), "resnet101", "inception_v2" (paper uses inception_v2)
+  anchor_areas: [100, 625, 2500, 10000, 40000] # 10², 25², 50², 100², 200² (paper values for 0.3m imagery)
+  anchor_ratios: [0.5, 1.0, 2.0] # aspect ratios for anchor boxes
+  confidence_threshold: 0.5 # min score to keep detection (0.0-1.0)
+  nms_threshold: 0.5 # IoU threshold for non-maximum suppression (0.0-1.0)
 
-# Stage 2: Line Segmentation (StackNetMTL)
+# Stage 2: Line Segmentation (U-Net)
 line_segmentation:
-  line_width_train: 30
-  line_width_inference: 9
+  line_width_train: 30 # pixels, dilated line width for training masks
+  line_width_inference: 9 # pixels, path width for graph inference scoring
 
 # Stage 3: Graph Inference
 graph_inference:
-  max_distance_m: 600.0
-  connectivity_threshold: 0.2
-  resolution_m_per_px: 0.3
+  max_distance_m: 600.0 # max distance (meters) between connected towers
+  connectivity_threshold: 0.2 # min avg probability along path to create edge (0.0-1.0)
+  resolution_m_per_px: 0.3 # image resolution in meters per pixel
 
-# Training parameters
+# Training parameters (optimized for NVIDIA L4 24GB)
 training:
-  iterations: 5000
-  max_epochs: 10
-  batch_size: 2
+  iterations: 50000
+  max_epochs: 100
+  batch_size: 8 # L4 24GB: 8-16 for tower, 4-8 for line segmentation
   initial_lr: 0.003
   lr_decay_factor: 0.1
   lr_decay_steps: 10000
   seed: 42
-  val_split: 0.1
-  num_workers: 0 # 0 for Windows compatibility. 4 or more for mac/linux
-  tensor_core_precision: "medium" # "highest", "high", or "medium" (faster)
+  val_split: 0.1 # fraction of data for validation (0.0-0.5)
+  num_workers: 4 # Colab/Linux: 4-8, Windows: 0
+  tensor_core_precision: "medium" # "highest", "high", "medium" (medium=TF32, fastest)
 
 # Weights & Biases experiment tracking
 wandb:
   enabled: true
   project: "gridtracer"
-  entity: null # set to your W&B username or team
-  tags: ["line-segmentation"] # tower-detection, line-segmentation
+  entity: null # your W&B username or team name
+  tags: ["tower-detection"]
   notes: ""
-  offline: false
+  offline: false # true to log locally without internet
