@@ -110,7 +110,9 @@ def train(
     import torch
     import pytorch_lightning as pl
     from pytorch_lightning.callbacks import ModelCheckpoint, RichProgressBar
-    from pytorch_lightning.loggers import WandbLogger
+    from detect_electrical_utility_from_satellite_images.utils.epoch_wandb_logger import (
+        EpochWandbLogger,
+    )
 
     from detect_electrical_utility_from_satellite_images.training import (
         TowerDetectionDataModule,
@@ -216,7 +218,9 @@ def _train_tower_detector(
     """
     import pytorch_lightning as pl
     from pytorch_lightning.callbacks import ModelCheckpoint, RichProgressBar
-    from pytorch_lightning.loggers import WandbLogger
+    from detect_electrical_utility_from_satellite_images.utils.epoch_wandb_logger import (
+        EpochWandbLogger,
+    )
 
     from detect_electrical_utility_from_satellite_images.training import (
         TowerDetectionDataModule,
@@ -282,7 +286,7 @@ def _train_tower_detector(
         timestamp = datetime.now().strftime("%m%d_%H%M")
         run_name = f"tower-{region_label}-{timestamp}"
         
-        logger = WandbLogger(
+        logger = EpochWandbLogger(
             project=f"{wandb_cfg.project}-tower",
             entity=wandb_cfg.entity,
             name=run_name,
@@ -341,7 +345,9 @@ def _train_line_segmentor(
     """
     import pytorch_lightning as pl
     from pytorch_lightning.callbacks import ModelCheckpoint, RichProgressBar
-    from pytorch_lightning.loggers import WandbLogger
+    from detect_electrical_utility_from_satellite_images.utils.epoch_wandb_logger import (
+        EpochWandbLogger,
+    )
 
     from detect_electrical_utility_from_satellite_images.training.line_training import (
         LineSegmentationDataModule,
@@ -406,7 +412,7 @@ def _train_line_segmentor(
         timestamp = datetime.now().strftime("%m%d_%H%M")
         run_name = f"line-{region_label}-{timestamp}"
         
-        logger = WandbLogger(
+        logger = EpochWandbLogger(
             project=f"{wandb_cfg.project}-line",
             entity=wandb_cfg.entity,
             name=run_name,

@@ -172,12 +172,38 @@ class TowerDetectorModule(pl.LightningModule):
         # Compute mAP
         map_results = self.val_map.compute()
         
-        self.log("val/mAP", map_results["map"], prog_bar=True, sync_dist=True)
-        self.log("val/mAP_50", map_results["map_50"], prog_bar=True, sync_dist=True)
-        self.log("val/mAP_75", map_results["map_75"], sync_dist=True)
+        self.log(
+            "val/mAP",
+            map_results["map"],
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
+        self.log(
+            "val/mAP_50",
+            map_results["map_50"],
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
+        self.log(
+            "val/mAP_75",
+            map_results["map_75"],
+            on_step=False,
+            on_epoch=True,
+            sync_dist=True,
+        )
         
         if "mar_100" in map_results:
-            self.log("val/recall", map_results["mar_100"], sync_dist=True)
+            self.log(
+                "val/recall",
+                map_results["mar_100"],
+                on_step=False,
+                on_epoch=True,
+                sync_dist=True,
+            )
 
         # Reset for next epoch
         self.val_map.reset()

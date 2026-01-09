@@ -187,7 +187,13 @@ class LineSegmentorModule(pl.LightningModule):
     def on_train_epoch_end(self) -> None:
         """Log training metrics at epoch end."""
         iou = self.train_iou.compute()
-        self.log("train/IoU", iou, prog_bar=True)
+        self.log(
+            "train/IoU",
+            iou,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
         self.train_iou.reset()
 
     def validation_step(
@@ -233,7 +239,13 @@ class LineSegmentorModule(pl.LightningModule):
     def on_validation_epoch_end(self) -> None:
         """Log validation metrics at epoch end."""
         iou = self.val_iou.compute()
-        self.log("val/IoU", iou, prog_bar=True)
+        self.log(
+            "val/IoU",
+            iou,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
         self.val_iou.reset()
 
     def configure_optimizers(self) -> dict[str, Any]:
