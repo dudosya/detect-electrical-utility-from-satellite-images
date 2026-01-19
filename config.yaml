@@ -22,7 +22,7 @@ tower_detection:
 
 # Stage 2: Line Segmentation (U-Net)
 line_segmentation:
-  line_width_train: 30 # pixels, dilated line width for training masks
+  line_width_train: 20 # pixels, dilated line width for training masks
   line_width_inference: 9 # pixels, path width for graph inference scoring
 
 # Stage 3: Graph Inference
@@ -33,7 +33,7 @@ graph_inference:
 
 # Training parameters (optimized for NVIDIA L4 24GB)
 training:
-  max_epochs: 50
+  max_epochs: 3
   batch_size: 8 # L4 24GB: 8-16 for tower, 4-8 for line segmentation
   initial_lr: 0.003
   lr_decay_factor: 0.1
