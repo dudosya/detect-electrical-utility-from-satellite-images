@@ -93,6 +93,26 @@ class LineSegmentationConfig(BaseModel):
         default=9,
         description="Line width in pixels during graph inference",
     )
+    dropout_rate: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=0.5,
+        description="Dropout rate for MC Dropout uncertainty (0 disables)",
+    )
+    mc_dropout_enabled: bool = Field(
+        default=False,
+        description="Enable MC Dropout uncertainty during validation",
+    )
+    mc_dropout_passes: int = Field(
+        default=10,
+        ge=1,
+        description="Number of MC Dropout passes",
+    )
+    mc_dropout_log_samples: int = Field(
+        default=4,
+        ge=1,
+        description="Number of samples to log to W&B",
+    )
 
 
 class GraphInferenceConfig(BaseModel):
@@ -140,6 +160,14 @@ class TrainingConfig(BaseModel):
         default="tile",
         description="How to split train/val: patch-level or tile-level (recommended)",
     )
+    split_strategy: Literal["within_region", "region_holdout"] = Field(
+        default="within_region",
+        description="Split strategy for generalization evaluation",
+    )
+    holdout_regions: list[str] = Field(
+        default_factory=list,
+        description="Regions reserved for validation when using region_holdout",
+    )
     persist_split: bool = Field(
         default=True,
         description="Persist the computed split to disk for reproducible eval/infer",
@@ -152,6 +180,24 @@ class TrainingConfig(BaseModel):
         default=1,
         ge=0,
         description="Minimum number of validation tiles (when tile-level splitting)",
+    )
+    checkpoint_every_n_epochs: int = Field(
+        default=1,
+        ge=0,
+        description="Checkpoint cadence in epochs (0 disables)",
+    )
+    checkpoint_every_n_train_steps: int = Field(
+        default=0,
+        ge=0,
+        description="Checkpoint cadence in steps (0 disables)",
+    )
+    resume_checkpoint_tower: Path | None = Field(
+        default=None,
+        description="Path to resume tower training checkpoint",
+    )
+    resume_checkpoint_line: Path | None = Field(
+        default=None,
+        description="Path to resume line training checkpoint",
     )
 
 

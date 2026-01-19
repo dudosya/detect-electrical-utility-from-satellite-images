@@ -246,6 +246,7 @@ class TowerDetectionDataModule(pl.LightningDataModule):
         self,
         config: Config,
         patches_dirs: list[Path] | Path | str,
+        val_patches_dirs: list[Path] | None = None,
         val_split: float = 0.1,
         num_workers: int = 4,
     ) -> None:
@@ -264,6 +265,9 @@ class TowerDetectionDataModule(pl.LightningDataModule):
             self.patches_dirs = [Path(patches_dirs)]
         else:
             self.patches_dirs = [Path(d) for d in patches_dirs]
+        self.val_patches_dirs = (
+            [Path(d) for d in val_patches_dirs] if val_patches_dirs else None
+        )
         self.val_split = val_split
         self.num_workers = num_workers
         self.batch_size = config.training.batch_size
@@ -288,30 +292,86 @@ class TowerDetectionDataModule(pl.LightningDataModule):
             train_parts: list[Any] = []
             val_parts: list[Any] = []
 
-            for patches_dir in self.patches_dirs:
-                ds = TowerDetectionDataset(
-                    patches_dir=patches_dir,
-                    include_background=False,  # Only patches with towers
-                )
-
-                if self.config.training.split_level == "tile":
-                    all_image_files = sorted((Path(patches_dir) / "images").glob("*.png"))
-                    split = load_or_create_tile_split(
-                        patches_dir=Path(patches_dir),
-                        image_files=all_image_files,
-                        seed=self.config.training.seed,
-                        val_split=self.val_split,
-                        persist=self.config.training.persist_split,
-                        split_file_name=self.config.training.split_file_name,
-                        min_val_tiles=self.config.training.min_val_tiles,
+            if self.val_patches_dirs:
+                for patches_dir in self.patches_dirs:
+                    train_parts.append(
+                        TowerDetectionDataset(
+                            patches_dir=patches_dir,
+                            include_background=False,
+                        )
+                    )
+                for patches_dir in self.val_patches_dirs:
+                    val_parts.append(
+                        TowerDetectionDataset(
+                            patches_dir=patches_dir,
+                            include_background=False,
+                        )
                     )
 
-                    if not split.val_tiles:
-                        log.warning(
-                            "tile_split_insufficient_tiles_falling_back_to_patch_split",
-                            patches_dir=str(patches_dir),
-                            num_tiles=len(split.train_tiles),
+                log.info(
+                    "region_holdout_split",
+                    train_regions=[p.name for p in self.patches_dirs],
+                    val_regions=[p.name for p in self.val_patches_dirs],
+                )
+            else:
+                for patches_dir in self.patches_dirs:
+                    ds = TowerDetectionDataset(
+                        patches_dir=patches_dir,
+                        include_background=False,  # Only patches with towers
+                    )
+
+                    if self.config.training.split_level == "tile":
+                        all_image_files = sorted(
+                            (Path(patches_dir) / "images").glob("*.png")
                         )
+                        split = load_or_create_tile_split(
+                            patches_dir=Path(patches_dir),
+                            image_files=all_image_files,
+                            seed=self.config.training.seed,
+                            val_split=self.val_split,
+                            persist=self.config.training.persist_split,
+                            split_file_name=self.config.training.split_file_name,
+                            min_val_tiles=self.config.training.min_val_tiles,
+                        )
+
+                        if not split.val_tiles:
+                            log.warning(
+                                "tile_split_insufficient_tiles_falling_back_to_patch_split",
+                                patches_dir=str(patches_dir),
+                                num_tiles=len(split.train_tiles),
+                            )
+                            total_size = len(ds)
+                            val_size = int(total_size * self.val_split)
+                            train_size = total_size - val_size
+                            train_ds, val_ds = random_split(
+                                ds,
+                                [train_size, val_size],
+                                generator=torch.Generator().manual_seed(
+                                    self.config.training.seed
+                                ),
+                            )
+                            train_parts.append(train_ds)
+                            val_parts.append(val_ds)
+                        else:
+                            train_idx = indices_for_tiles(
+                                ds.image_files, set(split.train_tiles)
+                            )
+                            val_idx = indices_for_tiles(
+                                ds.image_files, set(split.val_tiles)
+                            )
+
+                            train_parts.append(Subset(ds, train_idx))
+                            val_parts.append(Subset(ds, val_idx))
+
+                            log.info(
+                                "tile_data_split",
+                                patches_dir=str(patches_dir),
+                                train_tiles=len(split.train_tiles),
+                                val_tiles=len(split.val_tiles),
+                                train_size=len(train_idx),
+                                val_size=len(val_idx),
+                            )
+                    else:
                         total_size = len(ds)
                         val_size = int(total_size * self.val_split)
                         train_size = total_size - val_size
@@ -324,39 +384,16 @@ class TowerDetectionDataModule(pl.LightningDataModule):
                         )
                         train_parts.append(train_ds)
                         val_parts.append(val_ds)
-                    else:
-                        train_idx = indices_for_tiles(ds.image_files, set(split.train_tiles))
-                        val_idx = indices_for_tiles(ds.image_files, set(split.val_tiles))
-
-                        train_parts.append(Subset(ds, train_idx))
-                        val_parts.append(Subset(ds, val_idx))
-
-                        log.info(
-                            "tile_data_split",
-                            patches_dir=str(patches_dir),
-                            train_tiles=len(split.train_tiles),
-                            val_tiles=len(split.val_tiles),
-                            train_size=len(train_idx),
-                            val_size=len(val_idx),
-                        )
-                else:
-                    total_size = len(ds)
-                    val_size = int(total_size * self.val_split)
-                    train_size = total_size - val_size
-                    train_ds, val_ds = random_split(
-                        ds,
-                        [train_size, val_size],
-                        generator=torch.Generator().manual_seed(self.config.training.seed),
-                    )
-                    train_parts.append(train_ds)
-                    val_parts.append(val_ds)
 
             # Combine all region datasets
             if len(train_parts) == 1:
                 self.train_dataset = train_parts[0]
-                self.val_dataset = val_parts[0]
             else:
                 self.train_dataset = ConcatDataset(train_parts)
+
+            if len(val_parts) == 1:
+                self.val_dataset = val_parts[0]
+            else:
                 self.val_dataset = ConcatDataset(val_parts)
 
     def train_dataloader(self) -> DataLoader[Any]:

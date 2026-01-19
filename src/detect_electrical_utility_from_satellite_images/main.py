@@ -133,15 +133,40 @@ def train(
     max_epochs = epochs if epochs is not None else config.training.max_epochs
 
     # Discover regions to train on
-    regions = _discover_regions(config, region)
-    if not regions:
-        typer.echo("Error: No preprocessed regions found. Run 'uv run main preprocess' first.")
-        raise typer.Exit(code=1)
+    val_regions: list[str] = []
+    if config.training.split_strategy == "region_holdout":
+        all_regions = _discover_regions(config, None)
+        if not all_regions:
+            typer.echo("Error: No preprocessed regions found. Run 'uv run main preprocess' first.")
+            raise typer.Exit(code=1)
+
+        holdout_regions = config.training.holdout_regions
+        if region:
+            holdout_regions = [region]
+
+        if not holdout_regions:
+            typer.echo(
+                "Error: Provide holdout regions in config or via --region for holdout evaluation."
+            )
+            raise typer.Exit(code=1)
+
+        val_regions = holdout_regions
+        regions = [r for r in all_regions if r not in holdout_regions]
+        if not regions:
+            typer.echo("Error: No training regions left after holdout.")
+            raise typer.Exit(code=1)
+    else:
+        regions = _discover_regions(config, region)
+        if not regions:
+            typer.echo("Error: No preprocessed regions found. Run 'uv run main preprocess' first.")
+            raise typer.Exit(code=1)
 
     log.info(
         "training_start",
         stage=stage,
         regions=regions,
+        val_regions=val_regions,
+        split_strategy=config.training.split_strategy,
         seed=config.training.seed,
         max_epochs=max_epochs,
     )
@@ -154,6 +179,7 @@ def train(
         _train_tower_detector(
             config=config,
             regions=regions,
+            val_regions=val_regions,
             max_epochs=max_epochs,
             use_wandb=not no_wandb,
             fast_dev_run=fast_dev_run,
@@ -163,6 +189,7 @@ def train(
         _train_line_segmentor(
             config=config,
             regions=regions,
+            val_regions=val_regions,
             max_epochs=max_epochs,
             use_wandb=not no_wandb,
             fast_dev_run=fast_dev_run,
@@ -203,6 +230,7 @@ def _discover_regions(config: "Config", region: str | None) -> list[str]:
 def _train_tower_detector(
     config: "Config",
     regions: list[str],
+    val_regions: list[str],
     max_epochs: int,
     use_wandb: bool,
     fast_dev_run: bool,
@@ -231,6 +259,7 @@ def _train_tower_detector(
 
     # Collect patches directories for all regions
     patches_dirs = []
+    val_patches_dirs = []
     for region in regions:
         patches_dir = Path(config.paths.output_dir) / region
         if patches_dir.exists():
@@ -243,10 +272,23 @@ def _train_tower_detector(
         typer.echo("Error: No valid preprocessed regions found")
         raise typer.Exit(code=1)
 
+    for region in val_regions:
+        patches_dir = Path(config.paths.output_dir) / region
+        if patches_dir.exists():
+            val_patches_dirs.append(patches_dir)
+            log.info("val_region_added", region=region, path=str(patches_dir))
+        else:
+            log.warning("val_region_not_found", region=region)
+
+    if val_regions and not val_patches_dirs:
+        typer.echo("Error: No valid holdout regions found for validation")
+        raise typer.Exit(code=1)
+
     # Create data module with all regions
     data_module = TowerDetectionDataModule(
         config=config,
         patches_dirs=patches_dirs,
+        val_patches_dirs=val_patches_dirs if val_patches_dirs else None,
         val_split=config.training.val_split,
         num_workers=config.training.num_workers,
     )
@@ -265,19 +307,20 @@ def _train_tower_detector(
     # Setup callbacks
     callbacks: list[pl.Callback] = [RichProgressBar()]
     if not fast_dev_run:
-        # Checkpoint saves best and last ONLY at end of training
-        callbacks.append(
-            ModelCheckpoint(
-                dirpath=str(checkpoint_dir),
-                filename="best",
-                monitor="val/mAP",
-                mode="max",
-                save_top_k=1,
-                save_last=True,  # saves as last.ckpt
-                verbose=True,
-                every_n_epochs=max_epochs,  # Only save at the very end
-            )
-        )
+        checkpoint_kwargs: dict[str, object] = {
+            "dirpath": str(checkpoint_dir),
+            "filename": "best",
+            "monitor": "val/mAP",
+            "mode": "max",
+            "save_top_k": 1,
+            "save_last": True,
+            "verbose": True,
+        }
+        if config.training.checkpoint_every_n_epochs > 0:
+            checkpoint_kwargs["every_n_epochs"] = config.training.checkpoint_every_n_epochs
+        if config.training.checkpoint_every_n_train_steps > 0:
+            checkpoint_kwargs["every_n_train_steps"] = config.training.checkpoint_every_n_train_steps
+        callbacks.append(ModelCheckpoint(**checkpoint_kwargs))
 
     # Setup W&B logger from config (separate project for tower detection)
     logger: pl.loggers.Logger | bool = False
@@ -296,6 +339,8 @@ def _train_tower_detector(
             config={
                 "stage": "tower_detection",
                 "regions": regions,
+                "val_regions": val_regions,
+                "split_strategy": config.training.split_strategy,
                 "patch_size": config.preprocessing.patch_size,
                 "batch_size": config.training.batch_size,
                 "learning_rate": config.training.initial_lr,
@@ -322,7 +367,12 @@ def _train_tower_detector(
     log.info("starting_tower_training", regions=regions, num_regions=len(patches_dirs))
 
     # Train
-    trainer.fit(model, data_module)
+    ckpt_path = (
+        str(config.training.resume_checkpoint_tower)
+        if config.training.resume_checkpoint_tower
+        else None
+    )
+    trainer.fit(model, data_module, ckpt_path=ckpt_path)
 
     log.info("tower_training_complete", checkpoint_dir=str(checkpoint_dir))
 
@@ -330,6 +380,7 @@ def _train_tower_detector(
 def _train_line_segmentor(
     config: "Config",
     regions: list[str],
+    val_regions: list[str],
     max_epochs: int,
     use_wandb: bool,
     fast_dev_run: bool,
@@ -358,6 +409,7 @@ def _train_line_segmentor(
 
     # Collect patches directories for all regions
     patches_dirs = []
+    val_patches_dirs = []
     for region in regions:
         patches_dir = Path(config.paths.output_dir) / region
         if patches_dir.exists():
@@ -370,10 +422,23 @@ def _train_line_segmentor(
         typer.echo("Error: No valid preprocessed regions found")
         raise typer.Exit(code=1)
 
+    for region in val_regions:
+        patches_dir = Path(config.paths.output_dir) / region
+        if patches_dir.exists():
+            val_patches_dirs.append(patches_dir)
+            log.info("val_region_added", region=region, path=str(patches_dir))
+        else:
+            log.warning("val_region_not_found", region=region)
+
+    if val_regions and not val_patches_dirs:
+        typer.echo("Error: No valid holdout regions found for validation")
+        raise typer.Exit(code=1)
+
     # Create data module with all regions
     data_module = LineSegmentationDataModule(
         config=config,
         patches_dirs=patches_dirs,
+        val_patches_dirs=val_patches_dirs if val_patches_dirs else None,
         val_split=config.training.val_split,
         num_workers=config.training.num_workers,
     )
@@ -391,19 +456,20 @@ def _train_line_segmentor(
     # Setup callbacks
     callbacks: list[pl.Callback] = [RichProgressBar()]
     if not fast_dev_run:
-        # Checkpoint saves best and last ONLY at end of training
-        callbacks.append(
-            ModelCheckpoint(
-                dirpath=str(checkpoint_dir),
-                filename="best",
-                monitor="val/IoU",
-                mode="max",
-                save_top_k=1,
-                save_last=True,
-                verbose=True,
-                every_n_epochs=max_epochs,
-            )
-        )
+        checkpoint_kwargs: dict[str, object] = {
+            "dirpath": str(checkpoint_dir),
+            "filename": "best",
+            "monitor": "val/IoU",
+            "mode": "max",
+            "save_top_k": 1,
+            "save_last": True,
+            "verbose": True,
+        }
+        if config.training.checkpoint_every_n_epochs > 0:
+            checkpoint_kwargs["every_n_epochs"] = config.training.checkpoint_every_n_epochs
+        if config.training.checkpoint_every_n_train_steps > 0:
+            checkpoint_kwargs["every_n_train_steps"] = config.training.checkpoint_every_n_train_steps
+        callbacks.append(ModelCheckpoint(**checkpoint_kwargs))
 
     # Setup W&B logger from config (separate project for line segmentation)
     logger: pl.loggers.Logger | bool = False
@@ -422,10 +488,14 @@ def _train_line_segmentor(
             config={
                 "stage": "line_segmentation",
                 "regions": regions,
+                "val_regions": val_regions,
+                "split_strategy": config.training.split_strategy,
                 "patch_size": config.preprocessing.patch_size,
                 "batch_size": config.training.batch_size,
                 "learning_rate": config.training.initial_lr,
                 "line_width_train": config.line_segmentation.line_width_train,
+                "dropout_rate": config.line_segmentation.dropout_rate,
+                "mc_dropout_passes": config.line_segmentation.mc_dropout_passes,
             },
         )
 
@@ -445,7 +515,12 @@ def _train_line_segmentor(
     log.info("starting_line_training", regions=regions, num_regions=len(patches_dirs))
 
     # Train
-    trainer.fit(model, data_module)
+    ckpt_path = (
+        str(config.training.resume_checkpoint_line)
+        if config.training.resume_checkpoint_line
+        else None
+    )
+    trainer.fit(model, data_module, ckpt_path=ckpt_path)
 
     log.info("line_training_complete", checkpoint_dir=str(checkpoint_dir))
 

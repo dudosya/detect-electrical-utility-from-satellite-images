@@ -24,6 +24,10 @@ tower_detection:
 line_segmentation:
   line_width_train: 20 # pixels, dilated line width for training masks
   line_width_inference: 9 # pixels, path width for graph inference scoring
+  dropout_rate: 0.1 # dropout for MC Dropout uncertainty (0.0 disables)
+  mc_dropout_enabled: true
+  mc_dropout_passes: 10
+  mc_dropout_log_samples: 4
 
 # Stage 3: Graph Inference
 graph_inference:
@@ -41,11 +45,17 @@ training:
   seed: 42
   val_split: 0.1 # fraction of data for validation (0.0-0.5)
   split_level: "tile" # "tile" recommended (no leakage), or "patch"
+  split_strategy: "within_region" # "within_region" or "region_holdout"
+  holdout_regions: [] # e.g., ["NZ_Dunedin"]
   persist_split: true # writes split file under each region patches dir
   split_file_name: "split_tiles.json" # stored under preprocessed_data/patches/<region>/
   min_val_tiles: 1 # ensure at least 1 val tile when possible
   num_workers: 4 # Colab/Linux: 4-8, Windows: 0
   tensor_core_precision: "medium" # "highest", "high", "medium" (medium=TF32, fastest)
+  checkpoint_every_n_epochs: 1
+  checkpoint_every_n_train_steps: 0 # 0 disables step-based checkpointing
+  resume_checkpoint_tower: null
+  resume_checkpoint_line: null
 
 # Weights & Biases experiment tracking
 wandb:
