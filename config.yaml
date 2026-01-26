@@ -38,7 +38,7 @@ graph_inference:
 # Training parameters (optimized for NVIDIA L4 24GB)
 training:
   max_epochs: 3
-  batch_size: 8 # L4 24GB: 8-16 for tower, 4-8 for line segmentation
+  batch_size: 4 # L4 24GB: 8-16 for tower, 4-8 for line segmentation
   initial_lr: 0.003
   lr_decay_factor: 0.1
   lr_decay_steps: 10000
