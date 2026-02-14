@@ -1298,7 +1298,12 @@ def infer(
             typer.echo(f"Error: Folder not found: {folder}")
             raise typer.Exit(code=1)
 
-        images = sorted(folder.rglob("*.jpg") if recursive else folder.glob("*.jpg"))
+        scan_iter = folder.rglob("*") if recursive else folder.glob("*")
+        images = sorted(
+            path
+            for path in scan_iter
+            if path.is_file() and path.suffix.lower() == ".jpg"
+        )
         if not images:
             typer.echo(f"Error: No .jpg files found under {folder}")
             raise typer.Exit(code=1)
