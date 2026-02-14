@@ -113,6 +113,11 @@ class LineSegmentationConfig(BaseModel):
         ge=1,
         description="Number of samples to log to W&B",
     )
+    line_class_value: int = Field(
+        default=3,
+        ge=0,
+        description="Class value for line pixels in multiclass masks",
+    )
 
 
 class GraphInferenceConfig(BaseModel):
@@ -131,6 +136,19 @@ class GraphInferenceConfig(BaseModel):
     resolution_m_per_px: float = Field(
         default=0.3,
         description="Image resolution in meters per pixel",
+    )
+
+
+class InferenceConfig(BaseModel):
+    """Configuration for inference-time tiling."""
+
+    patch_size: int = Field(
+        default=500,
+        description="Patch size in pixels for tiled inference",
+    )
+    patch_stride: int = Field(
+        default=500,
+        description="Stride in pixels for tiled inference",
     )
 
 
@@ -223,6 +241,7 @@ class Config(BaseSettings):
         default_factory=LineSegmentationConfig
     )
     graph_inference: GraphInferenceConfig = Field(default_factory=GraphInferenceConfig)
+    inference: InferenceConfig = Field(default_factory=InferenceConfig)
     training: TrainingConfig = Field(default_factory=TrainingConfig)
     wandb: WandbConfig = Field(default_factory=WandbConfig)
 

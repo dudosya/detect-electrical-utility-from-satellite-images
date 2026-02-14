@@ -928,9 +928,25 @@ def _evaluate_line(
 @app.command()
 def infer(
     image: Annotated[
-        Path,
+        Optional[Path],
         typer.Argument(help="Path to satellite image for inference"),
-    ],
+    ] = None,
+    folder: Annotated[
+        Optional[Path],
+        typer.Option("--folder", help="Run inference on all .jpg files in a folder"),
+    ] = None,
+    recursive: Annotated[
+        bool,
+        typer.Option("--recursive/--no-recursive", help="Scan subfolders for images"),
+    ] = False,
+    mask: Annotated[
+        Optional[Path],
+        typer.Option("--mask", help="Optional multiclass mask for GT overlay"),
+    ] = None,
+    tiled: Annotated[
+        bool,
+        typer.Option("--tiled/--no-tiled", help="Run inference on tiled patches"),
+    ] = False,
     tower_checkpoint: Annotated[
         Optional[Path],
         typer.Option("--tower-ckpt", "-t", help="Tower detection checkpoint"),
@@ -968,15 +984,20 @@ def infer(
         uv run main infer image.jpg --tower-ckpt tower.ckpt --line-ckpt line.ckpt
     """
     import json
+    import time
 
     import matplotlib.pyplot as plt
     import numpy as np
     import torch
+    from torchvision.ops import nms
     from PIL import Image
 
     from detect_electrical_utility_from_satellite_images.evaluation.graph_eval import (
         create_inference_summary,
         visualize_graph,
+    )
+    from detect_electrical_utility_from_satellite_images.evaluation.line_eval import (
+        visualize_segmentation,
     )
     from detect_electrical_utility_from_satellite_images.models.graph_inference import (
         infer_graph,
@@ -987,14 +1008,267 @@ def infer(
     from detect_electrical_utility_from_satellite_images.training.line_training import (
         LineSegmentorModule,
     )
+    from detect_electrical_utility_from_satellite_images.data_loading import load_mask
 
     log = get_logger()
     config = load_config()
 
-    if not image.exists():
-        log.error("image_not_found", path=str(image))
-        typer.echo(f"Error: Image not found: {image}")
+    if folder is not None and mask is not None:
+        typer.echo("Error: Do not pass --mask when using --folder.")
         raise typer.Exit(code=1)
+
+    if folder is None and image is None:
+        typer.echo("Error: Provide an image path or use --folder.")
+        raise typer.Exit(code=1)
+
+    def _run_inference_on_image(
+        *,
+        image_path: Path,
+        mask_path: Optional[Path],
+        output_dir: Path,
+        show_images: bool,
+    ) -> None:
+        if not image_path.exists():
+            log.error("image_not_found", path=str(image_path))
+            typer.echo(f"Error: Image not found: {image_path}")
+            raise typer.Exit(code=1)
+
+        resolved_mask = mask_path
+        if resolved_mask is None:
+            candidate = image_path.with_name(f"{image_path.stem}_multiclass.png")
+            if candidate.exists():
+                resolved_mask = candidate
+                typer.echo(f"Auto-selected mask: {resolved_mask}")
+
+        if resolved_mask is not None and not resolved_mask.exists():
+            log.error("mask_not_found", path=str(resolved_mask))
+            typer.echo(f"Error: Mask not found: {resolved_mask}")
+            raise typer.Exit(code=1)
+
+        log.info(
+            "inference_start",
+            image=str(image_path),
+            tower_checkpoint=str(tower_checkpoint),
+            line_checkpoint=str(line_checkpoint),
+        )
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        typer.echo(f"Using device: {device}")
+
+        typer.echo(f"Loading image: {image_path}")
+        pil_image = Image.open(image_path).convert("RGB")
+        image_np = np.array(pil_image)
+
+        mask_np = None
+        if resolved_mask is not None:
+            typer.echo(f"Loading mask: {resolved_mask}")
+            mask_np = load_mask(resolved_mask)
+            if mask_np.shape[:2] != image_np.shape[:2]:
+                typer.echo(
+                    "Error: Mask shape does not match image shape: "
+                    f"mask={mask_np.shape} image={image_np.shape}"
+                )
+                raise typer.Exit(code=1)
+
+        image_tensor = torch.from_numpy(image_np).permute(2, 0, 1).float() / 255.0
+        image_batch = image_tensor.unsqueeze(0).to(device)
+
+        typer.echo("\n=== Stage 1: Tower Detection ===")
+        tower_model = TowerDetectorModule.load_from_checkpoint(
+            str(tower_checkpoint), config=config
+        )
+        tower_model.eval()
+        tower_model = tower_model.to(device)
+
+        line_model = LineSegmentorModule.load_from_checkpoint(
+            str(line_checkpoint), config=config
+        )
+        line_model.eval()
+        line_model = line_model.to(device)
+
+        conf_thresh = config.tower_detection.confidence_threshold
+        use_tiled = tiled
+        if use_tiled:
+            patch_size = config.inference.patch_size
+            patch_stride = config.inference.patch_stride
+            height, width = image_np.shape[:2]
+            if patch_size > width or patch_size > height:
+                typer.echo(
+                    "Patch size is larger than the image; falling back to full-image inference."
+                )
+                use_tiled = False
+
+        if use_tiled:
+            def _positions(limit: int, size: int, stride: int) -> list[int]:
+                if limit <= size:
+                    return [0]
+                positions = list(range(0, limit - size + 1, stride))
+                last = limit - size
+                if positions[-1] != last:
+                    positions.append(last)
+                return positions
+
+            height, width = image_np.shape[:2]
+            xs = _positions(width, patch_size, patch_stride)
+            ys = _positions(height, patch_size, patch_stride)
+
+            sum_map = np.zeros((height, width), dtype=np.float32)
+            count_map = np.zeros((height, width), dtype=np.float32)
+            all_boxes: list[torch.Tensor] = []
+            all_scores: list[torch.Tensor] = []
+
+            for y in ys:
+                for x in xs:
+                    patch = image_np[y : y + patch_size, x : x + patch_size]
+                    patch_tensor = (
+                        torch.from_numpy(patch).permute(2, 0, 1).float() / 255.0
+                    )
+                    patch_batch = patch_tensor.unsqueeze(0).to(device)
+
+                    with torch.no_grad():
+                        tower_outputs = tower_model.model(patch_batch)
+                        seg_output = line_model.model(patch_batch)
+                        seg_patch = torch.sigmoid(seg_output).squeeze().cpu().numpy()
+
+                    sum_map[y : y + patch_size, x : x + patch_size] += seg_patch
+                    count_map[y : y + patch_size, x : x + patch_size] += 1.0
+
+                    patch_boxes = tower_outputs[0]["boxes"]
+                    patch_scores = tower_outputs[0]["scores"]
+                    keep = patch_scores >= conf_thresh
+                    patch_boxes = patch_boxes[keep]
+                    patch_scores = patch_scores[keep]
+
+                    if patch_boxes.numel() > 0:
+                        patch_boxes = patch_boxes.clone()
+                        patch_boxes[:, [0, 2]] += x
+                        patch_boxes[:, [1, 3]] += y
+                        all_boxes.append(patch_boxes)
+                        all_scores.append(patch_scores)
+
+            seg_map_np = np.divide(
+                sum_map,
+                count_map,
+                out=np.zeros_like(sum_map),
+                where=count_map > 0,
+            )
+
+            if all_boxes:
+                boxes = torch.cat(all_boxes, dim=0)
+                scores = torch.cat(all_scores, dim=0)
+                keep = nms(boxes, scores, config.tower_detection.nms_threshold)
+                boxes = boxes[keep]
+                scores = scores[keep]
+            else:
+                boxes = torch.zeros((0, 4), device=device)
+                scores = torch.zeros((0,), device=device)
+        else:
+            with torch.no_grad():
+                tower_outputs = tower_model.model(image_batch)
+                seg_output = line_model.model(image_batch)
+                seg_map = torch.sigmoid(seg_output).squeeze()
+
+            boxes = tower_outputs[0]["boxes"]
+            scores = tower_outputs[0]["scores"]
+            keep = scores >= conf_thresh
+            boxes = boxes[keep]
+            scores = scores[keep]
+            seg_map_np = seg_map.cpu().numpy()
+
+        if len(boxes) > 0:
+            centroids = torch.stack(
+                [
+                    (boxes[:, 0] + boxes[:, 2]) / 2,
+                    (boxes[:, 1] + boxes[:, 3]) / 2,
+                ],
+                dim=1,
+            )
+        else:
+            centroids = torch.zeros((0, 2), device=device)
+
+        typer.echo(f"Detected {len(centroids)} towers")
+        log.info("stage_1_complete", num_towers=len(centroids))
+
+        typer.echo("\n=== Stage 2: Line Segmentation ===")
+        if use_tiled:
+            typer.echo(f"Segmentation map shape: {seg_map_np.shape}")
+            log.info("stage_2_complete", seg_shape=list(seg_map_np.shape))
+        else:
+            typer.echo(f"Segmentation map shape: {seg_map.shape}")
+            log.info("stage_2_complete", seg_shape=list(seg_map.shape))
+
+        typer.echo("\n=== Stage 3: Graph Inference ===")
+        graph = infer_graph(
+            tower_centroids=centroids,
+            tower_scores=scores,
+            segmentation_map=seg_map_np,
+            max_distance_m=config.graph_inference.max_distance_m,
+            connectivity_threshold=config.graph_inference.connectivity_threshold,
+            line_width=config.line_segmentation.line_width_inference,
+            resolution_m_per_px=config.graph_inference.resolution_m_per_px,
+        )
+
+        typer.echo(f"Graph: {graph.num_nodes} nodes, {graph.num_edges} edges")
+        log.info(
+            "stage_3_complete",
+            num_nodes=graph.num_nodes,
+            num_edges=graph.num_edges,
+        )
+
+        typer.echo("\n=== Inference Results ===")
+        typer.echo(f"Towers detected:     {graph.num_nodes}")
+        typer.echo(f"Connections found:   {graph.num_edges}")
+        typer.echo(f"Max distance:        {config.graph_inference.max_distance_m}m")
+        typer.echo(f"Conn. threshold:     {config.graph_inference.connectivity_threshold}")
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        typer.echo(f"\nSaving results to: {output_dir}")
+
+        fig_summary = create_inference_summary(
+            image=image_np,
+            graph=graph,
+            boxes=boxes.cpu().numpy(),
+            segmentation_map=seg_map_np,
+        )
+        summary_path = output_dir / "pipeline_summary.png"
+        fig_summary.savefig(summary_path, dpi=150, bbox_inches="tight")
+        typer.echo(f"  Pipeline summary: {summary_path}")
+
+        fig_graph = visualize_graph(
+            image=image_np,
+            graph=graph,
+            segmentation_map=seg_map_np,
+        )
+        graph_path = output_dir / "graph_overlay.png"
+        fig_graph.savefig(graph_path, dpi=150, bbox_inches="tight")
+        typer.echo(f"  Graph overlay:    {graph_path}")
+
+        if mask_np is not None:
+            line_class = config.line_segmentation.line_class_value
+            line_gt = (mask_np == line_class).astype(np.float32)
+            fig_line = visualize_segmentation(
+                image=image_np,
+                ground_truth=line_gt,
+                prediction=seg_map_np,
+                threshold=0.5,
+            )
+            line_path = output_dir / "line_segmentation_gt.png"
+            fig_line.savefig(line_path, dpi=150, bbox_inches="tight")
+            typer.echo(f"  Line GT overlay:  {line_path}")
+
+        if save_graph:
+            graph_json_path = output_dir / "graph.json"
+            with open(graph_json_path, "w") as f:
+                json.dump(graph.to_dict(), f, indent=2)
+            typer.echo(f"  Graph JSON:       {graph_json_path}")
+
+        log.info("inference_complete", output_dir=str(output_dir))
+
+        if show_images:
+            typer.echo("\nDisplaying visualizations... (close windows to continue)")
+            plt.show()
+        else:
+            plt.close("all")
 
     # Auto-select checkpoints if not provided
     if tower_checkpoint is None:
@@ -1013,146 +1287,64 @@ def infer(
             raise typer.Exit(code=1)
         typer.echo(f"Line checkpoint: {line_checkpoint}")
 
-    log.info(
-        "inference_start",
-        image=str(image),
-        tower_checkpoint=str(tower_checkpoint),
-        line_checkpoint=str(line_checkpoint),
-    )
-
-    # Setup device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    typer.echo(f"Using device: {device}")
-
-    # Load image
-    typer.echo(f"Loading image: {image}")
-    pil_image = Image.open(image).convert("RGB")
-    image_np = np.array(pil_image)
-    
-    # Convert to tensor (C, H, W)
-    image_tensor = torch.from_numpy(image_np).permute(2, 0, 1).float() / 255.0
-    image_batch = image_tensor.unsqueeze(0).to(device)
-
-    # --- Stage 1: Tower Detection ---
-    typer.echo("\n=== Stage 1: Tower Detection ===")
-    tower_model = TowerDetectorModule.load_from_checkpoint(
-        str(tower_checkpoint), config=config
-    )
-    tower_model.eval()
-    tower_model = tower_model.to(device)
-
-    with torch.no_grad():
-        tower_outputs = tower_model.model(image_batch)
-
-    # Extract detections
-    boxes = tower_outputs[0]["boxes"]
-    scores = tower_outputs[0]["scores"]
-    
-    # Filter by confidence
-    conf_thresh = config.tower_detection.confidence_threshold
-    mask = scores >= conf_thresh
-    boxes = boxes[mask]
-    scores = scores[mask]
-
-    # Compute centroids
-    if len(boxes) > 0:
-        centroids = torch.stack([
-            (boxes[:, 0] + boxes[:, 2]) / 2,
-            (boxes[:, 1] + boxes[:, 3]) / 2,
-        ], dim=1)
-    else:
-        centroids = torch.zeros((0, 2), device=device)
-
-    typer.echo(f"Detected {len(centroids)} towers")
-    log.info("stage_1_complete", num_towers=len(centroids))
-
-    # --- Stage 2: Line Segmentation ---
-    typer.echo("\n=== Stage 2: Line Segmentation ===")
-    line_model = LineSegmentorModule.load_from_checkpoint(
-        str(line_checkpoint), config=config
-    )
-    line_model.eval()
-    line_model = line_model.to(device)
-
-    with torch.no_grad():
-        seg_output = line_model.model(image_batch)
-        seg_map = torch.sigmoid(seg_output).squeeze()
-
-    typer.echo(f"Segmentation map shape: {seg_map.shape}")
-    log.info("stage_2_complete", seg_shape=list(seg_map.shape))
-
-    # --- Stage 3: Graph Inference ---
-    typer.echo("\n=== Stage 3: Graph Inference ===")
-    graph = infer_graph(
-        tower_centroids=centroids,
-        tower_scores=scores,
-        segmentation_map=seg_map,
-        max_distance_m=config.graph_inference.max_distance_m,
-        connectivity_threshold=config.graph_inference.connectivity_threshold,
-        line_width=config.line_segmentation.line_width_inference,
-        resolution_m_per_px=config.graph_inference.resolution_m_per_px,
-    )
-
-    typer.echo(f"Graph: {graph.num_nodes} nodes, {graph.num_edges} edges")
-    log.info(
-        "stage_3_complete",
-        num_nodes=graph.num_nodes,
-        num_edges=graph.num_edges,
-    )
-
-    # Print results summary
-    typer.echo("\n=== Inference Results ===")
-    typer.echo(f"Towers detected:     {graph.num_nodes}")
-    typer.echo(f"Connections found:   {graph.num_edges}")
-    typer.echo(f"Max distance:        {config.graph_inference.max_distance_m}m")
-    typer.echo(f"Conn. threshold:     {config.graph_inference.connectivity_threshold}")
-
-    # Setup output directory
     from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
+
     if output is None:
         output = Path(f"inference_results/{timestamp}")
-    output.mkdir(parents=True, exist_ok=True)
 
-    # Create and save visualizations
-    typer.echo(f"\nSaving results to: {output}")
+    if folder is not None:
+        if not folder.exists():
+            typer.echo(f"Error: Folder not found: {folder}")
+            raise typer.Exit(code=1)
 
-    # Summary figure
-    fig_summary = create_inference_summary(
-        image=image_np,
-        graph=graph,
-        boxes=boxes.cpu().numpy(),
-        segmentation_map=seg_map.cpu().numpy(),
+        images = sorted(folder.rglob("*.jpg") if recursive else folder.glob("*.jpg"))
+        if not images:
+            typer.echo(f"Error: No .jpg files found under {folder}")
+            raise typer.Exit(code=1)
+
+        if show:
+            typer.echo("Batch mode: disabling interactive visualization windows.")
+
+        failures: list[Path] = []
+        for img_path in images:
+            start = time.perf_counter()
+            try:
+                output_dir = output / img_path.stem
+                _run_inference_on_image(
+                    image_path=img_path,
+                    mask_path=None,
+                    output_dir=output_dir,
+                    show_images=False,
+                )
+                elapsed = time.perf_counter() - start
+                log.info(
+                    "inference_item_complete",
+                    image=str(img_path),
+                    elapsed_s=round(elapsed, 2),
+                )
+            except Exception as exc:
+                failures.append(img_path)
+                log.error(
+                    "inference_item_failed",
+                    image=str(img_path),
+                    error=str(exc),
+                )
+                typer.echo(f"Failed: {img_path} ({exc})")
+
+        typer.echo(f"\nBatch complete. Succeeded: {len(images) - len(failures)}")
+        if failures:
+            typer.echo(f"Failed: {len(failures)}")
+            for failed in failures:
+                typer.echo(f"  - {failed}")
+        return
+
+    _run_inference_on_image(
+        image_path=image,
+        mask_path=mask,
+        output_dir=output,
+        show_images=show,
     )
-    summary_path = output / "pipeline_summary.png"
-    fig_summary.savefig(summary_path, dpi=150, bbox_inches="tight")
-    typer.echo(f"  Pipeline summary: {summary_path}")
-
-    # Graph visualization
-    fig_graph = visualize_graph(
-        image=image_np,
-        graph=graph,
-        segmentation_map=seg_map.cpu().numpy(),
-    )
-    graph_path = output / "graph_overlay.png"
-    fig_graph.savefig(graph_path, dpi=150, bbox_inches="tight")
-    typer.echo(f"  Graph overlay:    {graph_path}")
-
-    # Save graph as JSON
-    if save_graph:
-        graph_json_path = output / "graph.json"
-        with open(graph_json_path, "w") as f:
-            json.dump(graph.to_dict(), f, indent=2)
-        typer.echo(f"  Graph JSON:       {graph_json_path}")
-
-    log.info("inference_complete", output_dir=str(output))
-
-    if show:
-        typer.echo("\nDisplaying visualizations... (close windows to continue)")
-        plt.show()
-    else:
-        plt.close("all")
 
 
 @app.command()

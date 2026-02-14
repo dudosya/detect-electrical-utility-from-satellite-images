@@ -28,12 +28,18 @@ line_segmentation:
   mc_dropout_enabled: true
   mc_dropout_passes: 10
   mc_dropout_log_samples: 4
+  line_class_value: 3 # class id for line pixels in multiclass masks
 
 # Stage 3: Graph Inference
 graph_inference:
   max_distance_m: 600.0 # max distance (meters) between connected towers
   connectivity_threshold: 0.2 # min avg probability along path to create edge (0.0-1.0)
   resolution_m_per_px: 0.3 # image resolution in meters per pixel
+
+# Inference tiling settings
+inference:
+  patch_size: 500 # patch size in pixels for tiled inference
+  patch_stride: 500 # stride in pixels for tiled inference
 
 # Training parameters (optimized for NVIDIA L4 24GB)
 training:
