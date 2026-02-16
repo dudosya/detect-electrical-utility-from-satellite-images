@@ -1075,22 +1075,25 @@ def infer(
 
             return np.array(centroids, dtype=np.float32)
 
-        def _extract_gt_nodes(mask_array: np.ndarray) -> np.ndarray:
+        def _extract_gt_nodes(mask_array: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
             tower_mask = mask_array == 1
+            other_tower_mask = mask_array == 2
             edge_mask = mask_array == 4
 
             tower_centroids = _component_centroids(tower_mask)
+            other_tower_centroids = _component_centroids(other_tower_mask)
             edge_centroids = _component_centroids(edge_mask)
 
             if len(tower_centroids) == 0 and len(edge_centroids) == 0:
-                return np.zeros((0, 2), dtype=np.float32)
+                gt_centroids = np.zeros((0, 2), dtype=np.float32)
+            elif len(tower_centroids) == 0:
+                gt_centroids = edge_centroids
+            elif len(edge_centroids) == 0:
+                gt_centroids = tower_centroids
+            else:
+                gt_centroids = np.vstack([tower_centroids, edge_centroids])
 
-            if len(tower_centroids) == 0:
-                return edge_centroids
-            if len(edge_centroids) == 0:
-                return tower_centroids
-
-            return np.vstack([tower_centroids, edge_centroids])
+            return gt_centroids, tower_centroids, other_tower_centroids
 
         def _compute_gt_adjacency(
             nodes: np.ndarray,
@@ -1339,10 +1342,12 @@ def infer(
         gt_centroids = None
         gt_adjacency = None
         line_gt = None
+        gt_towers = None
+        gt_other_towers = None
         if mask_np is not None:
             line_class = config.line_segmentation.line_class_value
             line_gt = (mask_np == line_class).astype(np.float32)
-            gt_nodes = _extract_gt_nodes(mask_np)
+            gt_nodes, gt_towers, gt_other_towers = _extract_gt_nodes(mask_np)
             if len(gt_nodes) > 0:
                 gt_centroids = gt_nodes
                 gt_adjacency = _compute_gt_adjacency(
@@ -1378,16 +1383,29 @@ def infer(
                     label="Predicted Towers",
                 )
 
-            ax_towers.scatter(
-                gt_centroids[:, 0],
-                gt_centroids[:, 1],
-                c="blue",
-                s=70,
-                marker="^",
-                edgecolors="white",
-                linewidths=1.5,
-                label="GT Towers",
-            )
+            if gt_towers is not None and len(gt_towers) > 0:
+                ax_towers.scatter(
+                    gt_towers[:, 0],
+                    gt_towers[:, 1],
+                    c="blue",
+                    s=70,
+                    marker="^",
+                    edgecolors="white",
+                    linewidths=1.5,
+                    label="GT Towers",
+                )
+
+            if gt_other_towers is not None and len(gt_other_towers) > 0:
+                ax_towers.scatter(
+                    gt_other_towers[:, 0],
+                    gt_other_towers[:, 1],
+                    c="green",
+                    s=70,
+                    marker="s",
+                    edgecolors="white",
+                    linewidths=1.5,
+                    label="GT Other Towers",
+                )
 
             ax_towers.set_title("Towers (GT vs Pred)")
             ax_towers.legend(loc="upper right")
