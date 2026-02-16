@@ -667,6 +667,7 @@ def evaluate(
     """
     import torch
     import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
 
     log = get_logger()
     config = load_config()
@@ -1360,6 +1361,42 @@ def infer(
         graph_path = output_dir / "graph_overlay.png"
         fig_graph.savefig(graph_path, dpi=150, bbox_inches="tight")
         typer.echo(f"  Graph overlay:    {graph_path}")
+
+        if gt_centroids is not None:
+            fig_towers, ax_towers = plt.subplots(1, 1, figsize=(12, 12))
+            ax_towers.imshow(image_np)
+
+            if len(centroids) > 0:
+                ax_towers.scatter(
+                    centroids[:, 0].cpu().numpy(),
+                    centroids[:, 1].cpu().numpy(),
+                    c="red",
+                    s=80,
+                    marker="o",
+                    edgecolors="white",
+                    linewidths=1.5,
+                    label="Predicted Towers",
+                )
+
+            ax_towers.scatter(
+                gt_centroids[:, 0],
+                gt_centroids[:, 1],
+                c="blue",
+                s=70,
+                marker="^",
+                edgecolors="white",
+                linewidths=1.5,
+                label="GT Towers",
+            )
+
+            ax_towers.set_title("Towers (GT vs Pred)")
+            ax_towers.legend(loc="upper right")
+            ax_towers.axis("off")
+
+            tower_path = output_dir / "tower_overlay.png"
+            fig_towers.savefig(tower_path, dpi=150, bbox_inches="tight")
+            typer.echo(f"  Tower overlay:   {tower_path}")
+            plt.close(fig_towers)
 
         if mask_np is not None and line_gt is not None:
             fig_line = visualize_segmentation(
