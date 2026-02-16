@@ -1001,6 +1001,7 @@ def infer(
     )
     from detect_electrical_utility_from_satellite_images.models.graph_inference import (
         infer_graph,
+        compute_path_pixels,
     )
     from detect_electrical_utility_from_satellite_images.training import (
         TowerDetectorModule,
@@ -1028,6 +1029,106 @@ def infer(
         output_dir: Path,
         show_images: bool,
     ) -> None:
+        def _component_centroids(binary_mask: np.ndarray) -> np.ndarray:
+            if not np.any(binary_mask):
+                return np.zeros((0, 2), dtype=np.float32)
+
+            visited = np.zeros(binary_mask.shape, dtype=bool)
+            ys, xs = np.where(binary_mask)
+            coords = list(zip(xs.tolist(), ys.tolist(), strict=False))
+            centroids: list[tuple[float, float]] = []
+
+            for x0, y0 in coords:
+                if visited[y0, x0]:
+                    continue
+
+                stack = [(x0, y0)]
+                visited[y0, x0] = True
+                count = 0
+                sum_x = 0
+                sum_y = 0
+
+                while stack:
+                    x, y = stack.pop()
+                    sum_x += x
+                    sum_y += y
+                    count += 1
+
+                    for dx in (-1, 0, 1):
+                        for dy in (-1, 0, 1):
+                            if dx == 0 and dy == 0:
+                                continue
+                            nx = x + dx
+                            ny = y + dy
+                            if (
+                                0 <= nx < binary_mask.shape[1]
+                                and 0 <= ny < binary_mask.shape[0]
+                                and binary_mask[ny, nx]
+                                and not visited[ny, nx]
+                            ):
+                                visited[ny, nx] = True
+                                stack.append((nx, ny))
+
+                if count > 0:
+                    centroids.append((sum_x / count, sum_y / count))
+
+            return np.array(centroids, dtype=np.float32)
+
+        def _extract_gt_nodes(mask_array: np.ndarray) -> np.ndarray:
+            tower_mask = mask_array == 1
+            edge_mask = mask_array == 4
+
+            tower_centroids = _component_centroids(tower_mask)
+            edge_centroids = _component_centroids(edge_mask)
+
+            if len(tower_centroids) == 0 and len(edge_centroids) == 0:
+                return np.zeros((0, 2), dtype=np.float32)
+
+            if len(tower_centroids) == 0:
+                return edge_centroids
+            if len(edge_centroids) == 0:
+                return tower_centroids
+
+            return np.vstack([tower_centroids, edge_centroids])
+
+        def _compute_gt_adjacency(
+            nodes: np.ndarray,
+            line_mask: np.ndarray,
+            line_width: int,
+        ) -> np.ndarray:
+            n = len(nodes)
+            adjacency = np.zeros((n, n), dtype=np.int32)
+            if n == 0:
+                return adjacency
+
+            for i in range(n):
+                for j in range(i + 1, n):
+                    path_pixels = compute_path_pixels(
+                        (float(nodes[i, 0]), float(nodes[i, 1])),
+                        (float(nodes[j, 0]), float(nodes[j, 1])),
+                        width=line_width,
+                    )
+                    if len(path_pixels) == 0:
+                        continue
+
+                    xs = path_pixels[:, 0]
+                    ys = path_pixels[:, 1]
+                    valid = (
+                        (xs >= 0)
+                        & (xs < line_mask.shape[1])
+                        & (ys >= 0)
+                        & (ys < line_mask.shape[0])
+                    )
+                    if not np.any(valid):
+                        continue
+
+                    xs = xs[valid]
+                    ys = ys[valid]
+                    if np.any(line_mask[ys, xs]):
+                        adjacency[i, j] = 1
+                        adjacency[j, i] = 1
+
+            return adjacency
         if not image_path.exists():
             log.error("image_not_found", path=str(image_path))
             typer.echo(f"Error: Image not found: {image_path}")
@@ -1234,18 +1335,33 @@ def infer(
         fig_summary.savefig(summary_path, dpi=150, bbox_inches="tight")
         typer.echo(f"  Pipeline summary: {summary_path}")
 
+        gt_centroids = None
+        gt_adjacency = None
+        line_gt = None
+        if mask_np is not None:
+            line_class = config.line_segmentation.line_class_value
+            line_gt = (mask_np == line_class).astype(np.float32)
+            gt_nodes = _extract_gt_nodes(mask_np)
+            if len(gt_nodes) > 0:
+                gt_centroids = gt_nodes
+                gt_adjacency = _compute_gt_adjacency(
+                    gt_nodes,
+                    line_mask=line_gt.astype(bool),
+                    line_width=config.line_segmentation.line_width_inference,
+                )
+
         fig_graph = visualize_graph(
             image=image_np,
             graph=graph,
             segmentation_map=seg_map_np,
+            gt_centroids=gt_centroids,
+            gt_adjacency=gt_adjacency,
         )
         graph_path = output_dir / "graph_overlay.png"
         fig_graph.savefig(graph_path, dpi=150, bbox_inches="tight")
         typer.echo(f"  Graph overlay:    {graph_path}")
 
-        if mask_np is not None:
-            line_class = config.line_segmentation.line_class_value
-            line_gt = (mask_np == line_class).astype(np.float32)
+        if mask_np is not None and line_gt is not None:
             fig_line = visualize_segmentation(
                 image=image_np,
                 ground_truth=line_gt,

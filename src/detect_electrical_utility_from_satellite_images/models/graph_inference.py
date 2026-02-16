@@ -113,8 +113,8 @@ def compute_path_pixels(
     if length < 1:
         return np.array([[int(x1), int(y1)]], dtype=np.int32)
 
-    # Number of sample points along line
-    n_samples = int(length) + 1
+    # Number of sample points along line (supersample to reduce aliasing)
+    n_samples = max(int(length * 2) + 1, 2)
 
     # Generate points along the center line
     t = np.linspace(0, 1, n_samples)
@@ -255,11 +255,14 @@ def infer_graph(
     if isinstance(segmentation_map, torch.Tensor):
         segmentation_map = segmentation_map.cpu().numpy()
 
-    # Handle 3D segmentation map (squeeze batch/channel dims)
-    if segmentation_map.ndim == 3:
+    # Handle 3D/4D segmentation map (squeeze batch/channel dims)
+    if segmentation_map.ndim in (3, 4):
         segmentation_map = segmentation_map.squeeze()
-    if segmentation_map.ndim == 4:
-        segmentation_map = segmentation_map.squeeze()
+    if segmentation_map.ndim != 2:
+        raise ValueError(
+            "segmentation_map must be 2D after squeezing, got shape "
+            f"{segmentation_map.shape}"
+        )
 
     n = len(tower_centroids)
     log.info(
@@ -278,9 +281,6 @@ def infer_graph(
             resolution_m_per_px=resolution_m_per_px,
         )
 
-    # Compute distance matrix
-    distance_matrix = compute_distance_matrix(tower_centroids, resolution_m_per_px)
-
     # Initialize adjacency and edge score matrices
     adjacency = np.zeros((n, n), dtype=np.int32)
     edge_scores = np.zeros((n, n), dtype=np.float32)
@@ -289,32 +289,53 @@ def infer_graph(
     n_candidates = 0
     n_connected = 0
 
+    max_distance_px = max_distance_m / resolution_m_per_px
+    bin_size = max(1.0, max_distance_px)
+    bin_map: dict[tuple[int, int], list[int]] = {}
+
+    for idx, (x, y) in enumerate(tower_centroids):
+        bin_x = int(x // bin_size)
+        bin_y = int(y // bin_size)
+        bin_map.setdefault((bin_x, bin_y), []).append(idx)
+
     for i in range(n):
-        for j in range(i + 1, n):
-            # Check distance constraint
-            dist = distance_matrix[i, j]
-            if dist > max_distance_m:
-                continue
+        x, y = tower_centroids[i]
+        bin_x = int(x // bin_size)
+        bin_y = int(y // bin_size)
 
-            n_candidates += 1
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                candidates = bin_map.get((bin_x + dx, bin_y + dy))
+                if not candidates:
+                    continue
+                for j in candidates:
+                    if j <= i:
+                        continue
 
-            # Compute connectivity score
-            score = compute_connectivity_score(
-                segmentation_map,
-                tuple(tower_centroids[i]),
-                tuple(tower_centroids[j]),
-                line_width=line_width,
-            )
+                    # Check distance constraint in pixels
+                    dist_px = float(np.linalg.norm(tower_centroids[i] - tower_centroids[j]))
+                    if dist_px > max_distance_px:
+                        continue
 
-            # Store score (symmetric)
-            edge_scores[i, j] = score
-            edge_scores[j, i] = score
+                    n_candidates += 1
 
-            # Check connectivity threshold
-            if score >= connectivity_threshold:
-                adjacency[i, j] = 1
-                adjacency[j, i] = 1
-                n_connected += 1
+                    # Compute connectivity score
+                    score = compute_connectivity_score(
+                        segmentation_map,
+                        tuple(tower_centroids[i]),
+                        tuple(tower_centroids[j]),
+                        line_width=line_width,
+                    )
+
+                    # Store score (symmetric)
+                    edge_scores[i, j] = score
+                    edge_scores[j, i] = score
+
+                    # Check connectivity threshold
+                    if score >= connectivity_threshold:
+                        adjacency[i, j] = 1
+                        adjacency[j, i] = 1
+                        n_connected += 1
 
     log.info(
         "graph_inference_complete",
