@@ -6,9 +6,9 @@ A three-stage machine learning pipeline for detecting electrical utility infrast
 
 GridTracer converts raw satellite imagery into a geospatial graph representing the power grid:
 
-1. **Stage 1 - Tower Detection**: Faster R-CNN with ResNet50-FPN backbone detects transmission towers
-2. **Stage 2 - Line Segmentation**: U-Net semantic segmentation produces power line probability maps
-3. **Stage 3 - Graph Inference**: Connects detected towers using segmentation scores and distance constraints
+1. **Stage 1 - Tower Detection**: Faster R-CNN with a ResNet-FPN backbone (resnet50/resnet101) detects towers using custom small-object anchors.
+2. **Stage 2 - Line Segmentation**: A vanilla U-Net predicts a binary line probability map (BCE + Dice loss during training).
+3. **Stage 3 - Graph Inference**: Connects tower pairs within a distance threshold by averaging line probabilities along the path, with grid-based candidate pruning for speed.
 
 ## Requirements
 
@@ -153,13 +153,24 @@ uv run main infer image.jpg -t tower.ckpt -l line.ckpt
 # Options
 uv run main infer image.jpg --no-show       # No interactive display
 uv run main infer image.jpg -o results/     # Custom output directory
+uv run main infer image.jpg --tiled         # Patch-based inference + stitching
+uv run main infer --folder raw_data/NZ_Dunedin --no-show
+uv run main infer --folder raw_data --recursive --no-show
 ```
+
+Mask handling:
+
+- If a mask is available and you do not pass `--mask`, inference will auto-load
+  `<image_stem>_multiclass.png` from the same folder.
+- You can still pass `--mask path/to/mask.png` to override the auto-detected mask.
 
 Inference outputs (saved to `inference_results/`):
 
 - `pipeline_summary.png`: 4-panel visualization of each stage
 - `graph_overlay.png`: Final graph overlaid on image
+- `tower_overlay.png`: GT vs predicted towers (when mask is available)
 - `graph.json`: Machine-readable graph data
+- `line_segmentation_gt.png`: GT vs predicted line overlay (when mask is available)
 
 ### 5. System Information
 
